@@ -7,13 +7,15 @@ import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.ListRow
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.ListSection
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.AdminService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.BotStats
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ConsultationStats
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.WhatsappService
 import org.springframework.stereotype.Component
 
 @Component
 class AdminCommand(
     private val adminService: AdminService,
-    private val stats: BotStats
+    private val botStats: BotStats,
+    private val consultationStats: ConsultationStats
 ) : BotCommand {
 
     override val name = "/admin"
@@ -21,22 +23,23 @@ class AdminCommand(
     override val showInHelp = false
 
     override fun execute(context: CommandContext, whatsappService: WhatsappService) {
-        // Verificacao de seguranca: o campo 'from' vem do webhook da Meta,
-        // nao do input do usuario. Nao pode ser falsificado.
         if (!adminService.isAdmin(context.from)) {
             whatsappService.sendMessage(context.from, "Acesso negado.")
             return
         }
 
-        val action = context.args.getOrNull(0)
-        when (action) {
+        when (context.args.getOrNull(0)) {
             null -> showPanel(context, whatsappService)
             "ban" -> handleBan(context, whatsappService)
             "unban" -> handleUnban(context, whatsappService)
             "banlist" -> showBanList(context, whatsappService)
             "block" -> handleBlock(context, whatsappService)
             "unblock" -> handleUnblock(context, whatsappService)
-            "status" -> showStatus(context, whatsappService)
+            "stats" -> showConsultationStats(context, whatsappService)
+            "top" -> showTopModules(context, whatsappService)
+            "historico" -> showHistory(context, whatsappService)
+            "status" -> showFullStatus(context, whatsappService)
+            "reset" -> handleReset(context, whatsappService)
             else -> whatsappService.sendMessage(context.from, "Acao admin invalida.")
         }
     }
@@ -46,19 +49,41 @@ class AdminCommand(
     private fun showPanel(context: CommandContext, whatsappService: WhatsappService) {
         adminService.clearPendingAction(context.from)
 
+        val s = botStats.toMap()
         val botStatus = if (adminService.isBotBlocked()) "Bloqueado" else "Ativo"
-        val bannedCount = adminService.getBannedCount()
-        val s = stats.toMap()
+        val total = consultationStats.getTotal()
+        val success = consultationStats.getSuccess()
+        val fail = consultationStats.getFail()
+        val rate = consultationStats.getSuccessRate()
+        val cost = consultationStats.getTotalCost()
+        val users = consultationStats.getUniqueUsersCount()
+        val banned = adminService.getBannedCount()
 
         whatsappService.sendMessage(
             context.from,
             buildString {
-                append("*Painel Administrativo*\n\n")
-                append("Bot: *$botStatus*\n")
-                append("Banidos: *$bannedCount*\n")
-                append("Uptime: ${s["uptime"]}\n")
-                append("Msgs enviadas: ${s["messagesSent"]}\n")
-                append("Msgs recebidas: ${s["messagesReceived"]}\n")
+                append("*PAINEL ADMINISTRATIVO*\n")
+                append("ND Consultas Veiculares\n\n")
+
+                append("*Sistema*\n")
+                append("Status: *$botStatus*\n")
+                append("Uptime: ${s["uptime"]}\n\n")
+
+                append("*Consultas*\n")
+                append("Total: *$total*\n")
+                if (total > 0) {
+                    append("Sucesso: $success ($rate)\n")
+                    append("Falhas: $fail\n")
+                }
+                append("Gasto API: R\$ ${"%.2f".format(cost)}\n\n")
+
+                append("*Usuarios*\n")
+                append("Ativos: *$users*\n")
+                append("Banidos: *$banned*\n\n")
+
+                append("*Mensagens*\n")
+                append("Enviadas: ${s["messagesSent"]}\n")
+                append("Recebidas: ${s["messagesReceived"]}\n")
                 append("Comandos: ${s["commandsExecuted"]}\n")
                 append("Erros: ${s["errors"]}")
             }
@@ -76,7 +101,15 @@ class AdminCommand(
                     rows = listOf(
                         ListRow("/admin ban", "Banir Numero", "Bloquear acesso de um numero"),
                         ListRow("/admin unban", "Desbanir Numero", "Restaurar acesso de um numero"),
-                        ListRow("/admin banlist", "Lista de Banidos", "Ver todos os numeros banidos")
+                        ListRow("/admin banlist", "Lista de Banidos", "Ver numeros banidos")
+                    )
+                ),
+                ListSection(
+                    title = "Relatorios",
+                    rows = listOf(
+                        ListRow("/admin stats", "Estatisticas", "Consultas, taxas e custos"),
+                        ListRow("/admin top", "Top Modulos", "Modulos mais consultados"),
+                        ListRow("/admin historico", "Historico Recente", "Ultimas consultas realizadas")
                     )
                 ),
                 ListSection(
@@ -84,7 +117,8 @@ class AdminCommand(
                     rows = listOf(
                         ListRow("/admin block", "Bloquear Consultas", "Impedir novas consultas"),
                         ListRow("/admin unblock", "Liberar Consultas", "Reativar consultas"),
-                        ListRow("/admin status", "Status Detalhado", "Metricas completas do bot")
+                        ListRow("/admin status", "Status Completo", "Todas as metricas do bot"),
+                        ListRow("/admin reset", "Resetar Contadores", "Zerar estatisticas")
                     )
                 )
             )
@@ -175,12 +209,12 @@ class AdminCommand(
         val banned = adminService.getBannedNumbers()
 
         if (banned.isEmpty()) {
-            whatsappService.sendMessage(context.from, "Nenhum numero banido no momento.")
+            whatsappService.sendMessage(context.from, "*Lista de Banidos*\n\nNenhum numero banido no momento.")
         } else {
             whatsappService.sendMessage(
                 context.from,
                 buildString {
-                    append("*Numeros Banidos* (${banned.size})\n\n")
+                    append("*Lista de Banidos* (${banned.size})\n\n")
                     banned.forEachIndexed { i, n ->
                         append("${i + 1}. $n\n")
                     }
@@ -213,32 +247,153 @@ class AdminCommand(
         sendBackButton(context, whatsappService)
     }
 
-    // ── Status ──────────────────────────────────────────────────────
+    // ── Estatisticas de Consultas ──────────────────────────────────
 
-    private fun showStatus(context: CommandContext, whatsappService: WhatsappService) {
-        val s = stats.toMap()
-        val botStatus = if (adminService.isBotBlocked()) "Bloqueado" else "Ativo"
-        val bannedCount = adminService.getBannedCount()
+    private fun showConsultationStats(context: CommandContext, whatsappService: WhatsappService) {
+        val total = consultationStats.getTotal()
+        val success = consultationStats.getSuccess()
+        val fail = consultationStats.getFail()
+        val rate = consultationStats.getSuccessRate()
+        val cost = consultationStats.getTotalCost()
+        val users = consultationStats.getUniqueUsersCount()
 
         whatsappService.sendMessage(
             context.from,
             buildString {
-                append("*Status Detalhado do Bot*\n\n")
-                append("*Estado:* $botStatus\n")
-                append("*Numeros banidos:* $bannedCount\n\n")
-                append("*Uptime:* ${s["uptime"]}\n")
-                append("*Iniciado em:* ${s["startedAt"]}\n\n")
-                append("*Msgs enviadas:* ${s["messagesSent"]}\n")
-                append("*Msgs recebidas:* ${s["messagesReceived"]}\n")
-                append("*Comandos executados:* ${s["commandsExecuted"]}\n")
-                append("*Erros:* ${s["errors"]}")
+                append("*Estatisticas de Consultas*\n\n")
+
+                append("*Resumo Geral*\n")
+                append("Total de consultas: *$total*\n")
+                append("Consultas com sucesso: *$success*\n")
+                append("Consultas com falha: *$fail*\n")
+                append("Taxa de sucesso: *$rate*\n\n")
+
+                append("*Financeiro (interno)*\n")
+                append("Gasto total API: *R\$ ${"%.2f".format(cost)}*\n\n")
+
+                append("*Usuarios*\n")
+                append("Usuarios unicos: *$users*\n")
+                append("Usuarios banidos: *${adminService.getBannedCount()}*")
             }
         )
 
         sendBackButton(context, whatsappService)
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────
+    // ── Top Modulos ────────────────────────────────────────────────
+
+    private fun showTopModules(context: CommandContext, whatsappService: WhatsappService) {
+        val top = consultationStats.getTopTypes(10)
+
+        if (top.isEmpty()) {
+            whatsappService.sendMessage(context.from, "*Top Modulos*\n\nNenhuma consulta registrada ainda.")
+            sendBackButton(context, whatsappService)
+            return
+        }
+
+        val total = consultationStats.getTotal()
+
+        whatsappService.sendMessage(
+            context.from,
+            buildString {
+                append("*Top Modulos Consultados*\n\n")
+                top.forEachIndexed { i, (label, count) ->
+                    val pct = if (total > 0) "%.1f%%".format((count.toDouble() / total) * 100) else "0%"
+                    append("${i + 1}. *$label*\n")
+                    append("   $count consultas ($pct)\n")
+                }
+            }
+        )
+
+        sendBackButton(context, whatsappService)
+    }
+
+    // ── Historico Recente ──────────────────────────────────────────
+
+    private fun showHistory(context: CommandContext, whatsappService: WhatsappService) {
+        val logs = consultationStats.getRecentLog(10)
+
+        if (logs.isEmpty()) {
+            whatsappService.sendMessage(context.from, "*Historico Recente*\n\nNenhuma consulta registrada ainda.")
+            sendBackButton(context, whatsappService)
+            return
+        }
+
+        whatsappService.sendMessage(
+            context.from,
+            buildString {
+                append("*Historico Recente*\n")
+                append("Ultimas ${logs.size} consultas\n\n")
+                logs.forEach { entry ->
+                    val status = if (entry.success) "ok" else "FALHA"
+                    append("*${entry.formatTimestamp()}* [$status]\n")
+                    append("${entry.tipoLabel} | ${entry.query}\n")
+                    append("De: ${entry.userPhone}\n\n")
+                }
+            }
+        )
+
+        sendBackButton(context, whatsappService)
+    }
+
+    // ── Status Completo ────────────────────────────────────────────
+
+    private fun showFullStatus(context: CommandContext, whatsappService: WhatsappService) {
+        val s = botStats.toMap()
+        val botStatus = if (adminService.isBotBlocked()) "Bloqueado" else "Ativo"
+        val total = consultationStats.getTotal()
+        val success = consultationStats.getSuccess()
+        val fail = consultationStats.getFail()
+        val rate = consultationStats.getSuccessRate()
+        val cost = consultationStats.getTotalCost()
+        val users = consultationStats.getUniqueUsersCount()
+        val banned = adminService.getBannedCount()
+
+        whatsappService.sendMessage(
+            context.from,
+            buildString {
+                append("*STATUS COMPLETO DO BOT*\n\n")
+
+                append("*Sistema*\n")
+                append("Estado: *$botStatus*\n")
+                append("Uptime: ${s["uptime"]}\n")
+                append("Iniciado em: ${s["startedAt"]}\n\n")
+
+                append("*Consultas Veiculares*\n")
+                append("Total: *$total*\n")
+                append("Sucesso: $success ($rate)\n")
+                append("Falhas: $fail\n")
+                append("Gasto API: R\$ ${"%.2f".format(cost)}\n\n")
+
+                append("*Usuarios*\n")
+                append("Unicos: $users\n")
+                append("Banidos: $banned\n\n")
+
+                append("*Mensagens*\n")
+                append("Enviadas: ${s["messagesSent"]}\n")
+                append("Recebidas: ${s["messagesReceived"]}\n\n")
+
+                append("*Processamento*\n")
+                append("Comandos executados: ${s["commandsExecuted"]}\n")
+                append("Erros totais: ${s["errors"]}")
+            }
+        )
+
+        sendBackButton(context, whatsappService)
+    }
+
+    // ── Reset ──────────────────────────────────────────────────────
+
+    private fun handleReset(context: CommandContext, whatsappService: WhatsappService) {
+        consultationStats.reset()
+        whatsappService.sendMessage(
+            context.from,
+            "*Contadores resetados*\n\nTodas as estatisticas de consultas foram zeradas.\nContadores de mensagens do bot nao foram afetados."
+        )
+        sendBackButton(context, whatsappService)
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────
 
     private fun sendBackButton(context: CommandContext, whatsappService: WhatsappService) {
         whatsappService.sendButtons(

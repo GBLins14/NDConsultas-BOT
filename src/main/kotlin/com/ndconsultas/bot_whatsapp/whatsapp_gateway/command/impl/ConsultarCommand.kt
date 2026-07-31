@@ -7,6 +7,7 @@ import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.ListRow
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.ListSection
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.AdminService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ConsultationSessionManager
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ConsultationStats
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PdfReportService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.VehicleConsultationService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.WhatsappService
@@ -20,7 +21,8 @@ class ConsultarCommand(
     private val consultationService: VehicleConsultationService,
     private val sessionManager: ConsultationSessionManager,
     private val pdfService: PdfReportService,
-    private val adminService: AdminService
+    private val adminService: AdminService,
+    private val consultationStats: ConsultationStats
 ) : BotCommand {
 
     override val name = "/consultar"
@@ -223,6 +225,9 @@ class ConsultarCommand(
         } catch (e: Exception) {
             log.warn("Falha ao remover reaction: {}", e.message)
         }
+
+        // Registrar metricas da consulta
+        consultationStats.record(context.from, tipo, info.label, query, result.success, result.custo)
 
         // Erro na consulta
         if (!result.success) {
