@@ -146,20 +146,25 @@ class AdminCommand(
             return
         }
 
-        if (adminService.isAdmin(normalized)) {
-            whatsappService.sendMessage(context.from, "Nao e possivel banir o numero admin.")
-            sendBackButton(context, whatsappService)
-            return
-        }
-
         if (adminService.isBanned(normalized)) {
             whatsappService.sendMessage(context.from, "O numero *$normalized* ja esta banido.")
             sendBackButton(context, whatsappService)
             return
         }
 
-        adminService.banNumber(normalized)
-        whatsappService.sendMessage(context.from, "Numero *$normalized* foi banido com sucesso.")
+        val result = adminService.banNumber(normalized)
+
+        if (result.reason == "admin") {
+            whatsappService.sendMessage(context.from, "Nao e possivel banir o numero admin.")
+            sendBackButton(context, whatsappService)
+            return
+        }
+
+        val variantsList = result.variants.joinToString("\n") { "  - $it" }
+        whatsappService.sendMessage(
+            context.from,
+            "*Numero banido com sucesso*\n\nVariantes bloqueadas:\n$variantsList"
+        )
         sendBackButton(context, whatsappService)
     }
 
@@ -198,8 +203,12 @@ class AdminCommand(
             return
         }
 
-        adminService.unbanNumber(normalized)
-        whatsappService.sendMessage(context.from, "Numero *$normalized* foi desbanido com sucesso.")
+        val removed = adminService.unbanNumber(normalized)
+        val variantsList = removed.joinToString("\n") { "  - $it" }
+        whatsappService.sendMessage(
+            context.from,
+            "*Numero desbanido com sucesso*\n\nVariantes desbloqueadas:\n$variantsList"
+        )
         sendBackButton(context, whatsappService)
     }
 
