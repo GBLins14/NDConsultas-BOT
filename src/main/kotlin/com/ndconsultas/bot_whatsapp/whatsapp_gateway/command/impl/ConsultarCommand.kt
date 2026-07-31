@@ -23,69 +23,131 @@ class ConsultarCommand(
     data class QueryTypeInfo(
         val label: String,
         val inputPrompt: String,
-        val price: String
+        val price: String,
+        val category: String
+    )
+
+    data class CategoryInfo(
+        val label: String,
+        val description: String,
+        val count: Int
     )
 
     companion object {
         val QUERY_TYPES = mapOf(
             // Consulta por Placa
-            "placa_full" to QueryTypeInfo("Placa Full", "Informe a *placa* do veiculo", "R\$ 0,10"),
-            "placa_duality" to QueryTypeInfo("Placa Duality", "Informe a *placa* do veiculo", "R\$ 0,20"),
-            "placa_serpro" to QueryTypeInfo("Placa SERPRO", "Informe a *placa* do veiculo", "R\$ 0,20"),
-            "placa_senatran" to QueryTypeInfo("Placa SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60"),
-            "bin_placa" to QueryTypeInfo("BIN Placa", "Informe a *placa* do veiculo", "R\$ 0,10"),
-            "frota" to QueryTypeInfo("Frota Veicular", "Informe o *CPF ou CNPJ* do proprietario", "R\$ 0,20"),
+            "placa_full" to QueryTypeInfo("Placa Full", "Informe a *placa* do veiculo", "R\$ 0,10", "placa"),
+            "placa_duality" to QueryTypeInfo("Placa Duality", "Informe a *placa* do veiculo", "R\$ 0,20", "placa"),
+            "placa_serpro" to QueryTypeInfo("Placa SERPRO", "Informe a *placa* do veiculo", "R\$ 0,20", "placa"),
+            "placa_senatran" to QueryTypeInfo("Placa SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60", "placa"),
+            "bin_placa" to QueryTypeInfo("BIN Placa", "Informe a *placa* do veiculo", "R\$ 0,10", "placa"),
+            "frota" to QueryTypeInfo("Frota Veicular", "Informe o *CPF ou CNPJ* do proprietario", "R\$ 0,20", "placa"),
             // Chassi e Motor
-            "bin_chassi" to QueryTypeInfo("BIN Chassi", "Informe o *numero do chassi*", "R\$ 0,10"),
-            "chassi_serpro" to QueryTypeInfo("Chassi SERPRO", "Informe o *numero do chassi*", "R\$ 0,30"),
-            "chassi_senatran" to QueryTypeInfo("Chassi SENATRAN", "Informe o *numero do chassi*", "R\$ 0,60"),
-            "bin_motor" to QueryTypeInfo("BIN Motor", "Informe o *numero do motor*", "R\$ 0,10"),
-            "motor_senatran" to QueryTypeInfo("Motor SENATRAN", "Informe o *numero do motor*", "R\$ 0,60"),
+            "bin_chassi" to QueryTypeInfo("BIN Chassi", "Informe o *numero do chassi*", "R\$ 0,10", "chassi"),
+            "chassi_serpro" to QueryTypeInfo("Chassi SERPRO", "Informe o *numero do chassi*", "R\$ 0,30", "chassi"),
+            "chassi_senatran" to QueryTypeInfo("Chassi SENATRAN", "Informe o *numero do chassi*", "R\$ 0,60", "chassi"),
+            "bin_motor" to QueryTypeInfo("BIN Motor", "Informe o *numero do motor*", "R\$ 0,10", "chassi"),
+            "motor_senatran" to QueryTypeInfo("Motor SENATRAN", "Informe o *numero do motor*", "R\$ 0,60", "chassi"),
             // Renavam e CNH
-            "bin_renavam" to QueryTypeInfo("BIN Renavam", "Informe o *numero do RENAVAM*", "R\$ 0,10"),
-            "renavam_serpro" to QueryTypeInfo("Renavam SERPRO", "Informe o *numero do RENAVAM*", "R\$ 0,20"),
-            "cnh_full" to QueryTypeInfo("CNH Full", "Informe o *CPF* do condutor", "R\$ 0,20"),
-            "cnh_serpro" to QueryTypeInfo("CNH SERPRO", "Informe o *CPF* do condutor", "R\$ 0,30"),
+            "bin_renavam" to QueryTypeInfo("BIN Renavam", "Informe o *numero do RENAVAM*", "R\$ 0,10", "renavam"),
+            "renavam_serpro" to QueryTypeInfo("Renavam SERPRO", "Informe o *numero do RENAVAM*", "R\$ 0,20", "renavam"),
+            "cnh_full" to QueryTypeInfo("CNH Full", "Informe o *CPF* do condutor", "R\$ 0,20", "renavam"),
+            "cnh_serpro" to QueryTypeInfo("CNH SERPRO", "Informe o *CPF* do condutor", "R\$ 0,30", "renavam"),
             // Laudos Veiculares
-            "laudo_veicular" to QueryTypeInfo("Laudo Veicular", "Informe a *placa* do veiculo", "R\$ 0,25"),
-            "laudo_veicular_historico" to QueryTypeInfo("Laudo Historico", "Informe a *placa* do veiculo", "R\$ 0,01"),
-            "laudo_veicular_id" to QueryTypeInfo("Laudo por ID", "Informe o *ID do laudo*", "R\$ 0,07"),
+            "laudo_veicular" to QueryTypeInfo("Laudo Veicular", "Informe a *placa* do veiculo", "R\$ 0,25", "laudo"),
+            "laudo_veicular_historico" to QueryTypeInfo("Laudo Historico", "Informe a *placa* do veiculo", "R\$ 0,01", "laudo"),
+            "laudo_veicular_id" to QueryTypeInfo("Laudo por ID", "Informe o *ID do laudo*", "R\$ 0,07", "laudo"),
             // SENATRAN Avancado
-            "multas_senatran" to QueryTypeInfo("Multas SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60"),
-            "ocorrencias_senatran" to QueryTypeInfo("Ocorrencias SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60"),
-            "recall_senatran" to QueryTypeInfo("Recall SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60"),
-            "renajud_senatran" to QueryTypeInfo("Renajud SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60")
+            "multas_senatran" to QueryTypeInfo("Multas SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60", "senatran"),
+            "ocorrencias_senatran" to QueryTypeInfo("Ocorrencias SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60", "senatran"),
+            "recall_senatran" to QueryTypeInfo("Recall SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60", "senatran"),
+            "renajud_senatran" to QueryTypeInfo("Renajud SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60", "senatran")
+        )
+
+        val CATEGORIES = linkedMapOf(
+            "placa" to CategoryInfo("Consulta por Placa", "Placa, BIN e Frota", 6),
+            "chassi" to CategoryInfo("Chassi e Motor", "Chassi e Motor", 5),
+            "renavam" to CategoryInfo("Renavam e CNH", "Renavam e CNH", 4),
+            "laudo" to CategoryInfo("Laudos Veiculares", "Laudos e Historico", 3),
+            "senatran" to CategoryInfo("SENATRAN Avancado", "Multas, Recall e mais", 4)
         )
     }
 
     override fun execute(context: CommandContext, whatsappService: WhatsappService) {
         when {
-            context.args.isEmpty() -> showConsultationPanel(context, whatsappService)
+            context.args.isEmpty() -> showCategories(context, whatsappService)
+            context.args[0] == "cat" && context.args.size >= 2 -> showCategoryTypes(context, whatsappService)
             context.args.size == 1 -> promptForData(context, whatsappService)
             else -> executeQuery(context, whatsappService)
         }
     }
 
-    // ── Step 1: Painel de Consulta ──────────────────────────────────
+    // ── Step 1: Categorias ─────────────────────────────────────────
 
-    private fun showConsultationPanel(context: CommandContext, whatsappService: WhatsappService) {
+    private fun showCategories(context: CommandContext, whatsappService: WhatsappService) {
         whatsappService.sendList(
             to = context.from,
             header = "Consulta Veicular",
             body = buildString {
-                appendLine("Bem-vindo ao *Painel de Consultas Veiculares*")
-                appendLine()
-                appendLine("Selecione abaixo o tipo de consulta que deseja realizar.")
-                appendLine()
-                appendLine("Temos *22 modulos* disponiveis organizados por categoria.")
+                append("Bem-vindo ao *Painel de Consultas Veiculares*\n\n")
+                append("Selecione uma categoria para ver os modulos disponiveis.\n\n")
+                append("*22 modulos* organizados em *5 categorias*.")
             },
-            buttonLabel = "Ver Consultas",
+            buttonLabel = "Ver Categorias",
             footer = "ND Consultas | Veicular",
-            sections = buildSections()
+            sections = listOf(
+                ListSection(
+                    title = "Categorias",
+                    rows = CATEGORIES.map { (key, cat) ->
+                        ListRow(
+                            id = "/consultar cat $key",
+                            title = cat.label,
+                            description = "${cat.description} (${cat.count} modulos)"
+                        )
+                    }
+                )
+            )
         )
     }
 
-    // ── Step 2: Solicitar dado ──────────────────────────────────────
+    // ── Step 2: Tipos da categoria ─────────────────────────────────
+
+    private fun showCategoryTypes(context: CommandContext, whatsappService: WhatsappService) {
+        val catKey = context.args[1]
+        val category = CATEGORIES[catKey]
+
+        if (category == null) {
+            whatsappService.sendMessage(
+                context.from,
+                "Categoria invalida.\nUse /consultar para ver as categorias."
+            )
+            return
+        }
+
+        val types = QUERY_TYPES.filter { it.value.category == catKey }
+
+        whatsappService.sendList(
+            to = context.from,
+            header = category.label,
+            body = "Selecione o tipo de consulta que deseja realizar.\nCada modulo possui um custo indicado na descricao.",
+            buttonLabel = "Ver Modulos",
+            footer = "ND Consultas | ${category.label}",
+            sections = listOf(
+                ListSection(
+                    title = category.label,
+                    rows = types.map { (tipo, info) ->
+                        ListRow(
+                            id = "/consultar $tipo",
+                            title = info.label,
+                            description = "${info.inputPrompt.replace("*", "")} | ${info.price}"
+                        )
+                    }
+                )
+            )
+        )
+    }
+
+    // ── Step 3: Solicitar dado ──────────────────────────────────────
 
     private fun promptForData(context: CommandContext, whatsappService: WhatsappService) {
         val tipo = context.args[0]
@@ -104,15 +166,14 @@ class ConsultarCommand(
         whatsappService.sendMessage(
             context.from,
             buildString {
-                appendLine("*${info.label}*")
-                appendLine("Custo: ${info.price}")
-                appendLine()
-                appendLine("${info.inputPrompt}:")
+                append("*${info.label}*\n")
+                append("Custo: ${info.price}\n\n")
+                append("${info.inputPrompt}:")
             }
         )
     }
 
-    // ── Step 3: Executar consulta ───────────────────────────────────
+    // ── Step 4: Executar consulta ───────────────────────────────────
 
     private fun executeQuery(context: CommandContext, whatsappService: WhatsappService) {
         val tipo = context.args[0]
@@ -145,19 +206,17 @@ class ConsultarCommand(
             whatsappService.sendMessage(
                 context.from,
                 buildString {
-                    appendLine("*Erro na consulta*")
-                    appendLine()
-                    appendLine("Tipo: ${info.label}")
-                    appendLine("Dado: $query")
-                    appendLine()
-                    appendLine(result.error ?: "Erro desconhecido.")
+                    append("*Erro na consulta*\n\n")
+                    append("Tipo: ${info.label}\n")
+                    append("Dado: $query\n\n")
+                    append(result.error ?: "Erro desconhecido.")
                 }
             )
             whatsappService.sendButtons(
                 to = context.from,
                 body = "O que deseja fazer?",
                 buttons = listOf(
-                    Button(id = "/consultar $tipo", title = "Tentar Novamente"),
+                    Button(id = "/consultar cat ${info.category}", title = "Tentar Novamente"),
                     Button(id = "/consultar", title = "Outra Consulta"),
                     Button(id = "/start", title = "Menu Inicial")
                 )
@@ -170,26 +229,26 @@ class ConsultarCommand(
         val formattedData = formatResult(result.data)
         val messages = splitMessage(formattedData, 3500)
 
-        // Header message
+        // Header
         whatsappService.sendMessage(
             context.from,
             buildString {
-                appendLine("*${info.label}*")
-                appendLine("Dado consultado: `$query`")
+                append("*${info.label}*\n")
+                append("Dado consultado: $query\n")
                 if (result.custo != null || result.saldoRestante != null) {
-                    appendLine()
-                    if (result.custo != null) appendLine("Custo: ${result.custo}")
-                    if (result.saldoRestante != null) appendLine("Saldo restante: ${result.saldoRestante}")
+                    append("\n")
+                    if (result.custo != null) append("Custo: ${result.custo}\n")
+                    if (result.saldoRestante != null) append("Saldo restante: ${result.saldoRestante}\n")
                 }
             }
         )
 
-        // Data messages (split if too long)
+        // Data
         messages.forEach { msg ->
             whatsappService.sendMessage(context.from, msg)
         }
 
-        // Follow-up buttons
+        // Follow-up
         whatsappService.sendButtons(
             to = context.from,
             body = "Deseja realizar outra consulta?",
@@ -267,56 +326,4 @@ class ConsultarCommand(
         }
         return messages
     }
-
-    // ── Construcao do menu interativo ───────────────────────────────
-
-    private fun buildSections(): List<ListSection> = listOf(
-        ListSection(
-            title = "Consulta por Placa",
-            rows = listOf(
-                ListRow("/consultar placa_full", "Placa Full", "Consulta completa | R\$ 0,10"),
-                ListRow("/consultar placa_duality", "Placa Duality", "Base Duality | R\$ 0,20"),
-                ListRow("/consultar placa_serpro", "Placa SERPRO", "Base SERPRO | R\$ 0,20"),
-                ListRow("/consultar placa_senatran", "Placa SENATRAN", "Base SENATRAN | R\$ 0,60"),
-                ListRow("/consultar bin_placa", "BIN Placa", "Base Nacional | R\$ 0,10"),
-                ListRow("/consultar frota", "Frota Veicular", "Por CPF/CNPJ | R\$ 0,20")
-            )
-        ),
-        ListSection(
-            title = "Chassi e Motor",
-            rows = listOf(
-                ListRow("/consultar bin_chassi", "BIN Chassi", "Base Nacional | R\$ 0,10"),
-                ListRow("/consultar chassi_serpro", "Chassi SERPRO", "Base SERPRO | R\$ 0,30"),
-                ListRow("/consultar chassi_senatran", "Chassi SENATRAN", "Base SENATRAN | R\$ 0,60"),
-                ListRow("/consultar bin_motor", "BIN Motor", "Base Nacional | R\$ 0,10"),
-                ListRow("/consultar motor_senatran", "Motor SENATRAN", "Base SENATRAN | R\$ 0,60")
-            )
-        ),
-        ListSection(
-            title = "Renavam e CNH",
-            rows = listOf(
-                ListRow("/consultar bin_renavam", "BIN Renavam", "Base Nacional | R\$ 0,10"),
-                ListRow("/consultar renavam_serpro", "Renavam SERPRO", "Base SERPRO | R\$ 0,20"),
-                ListRow("/consultar cnh_full", "CNH Full", "Por CPF | R\$ 0,20"),
-                ListRow("/consultar cnh_serpro", "CNH SERPRO", "Por CPF | R\$ 0,30")
-            )
-        ),
-        ListSection(
-            title = "Laudos Veiculares",
-            rows = listOf(
-                ListRow("/consultar laudo_veicular", "Laudo Veicular", "Laudo completo | R\$ 0,25"),
-                ListRow("/consultar laudo_veicular_historico", "Laudo Historico", "Historico de laudos | R\$ 0,01"),
-                ListRow("/consultar laudo_veicular_id", "Laudo por ID", "Consulta por ID | R\$ 0,07")
-            )
-        ),
-        ListSection(
-            title = "SENATRAN Avancado",
-            rows = listOf(
-                ListRow("/consultar multas_senatran", "Multas", "Consulta de multas | R\$ 0,60"),
-                ListRow("/consultar ocorrencias_senatran", "Ocorrencias", "Registros policiais | R\$ 0,60"),
-                ListRow("/consultar recall_senatran", "Recall", "Recalls do veiculo | R\$ 0,60"),
-                ListRow("/consultar renajud_senatran", "Renajud", "Restricoes judiciais | R\$ 0,60")
-            )
-        )
-    )
 }
