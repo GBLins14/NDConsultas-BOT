@@ -16,24 +16,24 @@ class StartCommand : BotCommand {
     override fun execute(context: CommandContext, whatsappService: WhatsappService) {
         whatsappService.sendMessage(
             context.from,
-            """
-            *Ola, ${context.senderName}!* 👋
-
-            Bem-vindo ao *NDConsultas BOT*!
-            Sou seu assistente virtual e estou aqui para ajuda-lo.
-
-            Use /help para ver todos os comandos disponiveis.
-            """.trimIndent()
+            buildString {
+                appendLine("*Ola, ${context.senderName}!*")
+                appendLine()
+                appendLine("Bem-vindo ao *ND Consultas Veiculares*!")
+                appendLine("Sou seu assistente virtual para consultas de veiculos.")
+                appendLine()
+                appendLine("Escolha uma opcao abaixo para comecar.")
+            }
         )
 
         whatsappService.sendButtons(
             to = context.from,
             body = "O que deseja fazer?",
             buttons = listOf(
-                Button(id = "/menu", title = "Menu"),
-                Button(id = "/help", title = "Ajuda"),
-                Button(id = "/info", title = "Informacoes")
-            )
+                Button(id = "/consultar", title = "Consultar Veiculo"),
+                Button(id = "/help", title = "Ajuda")
+            ),
+            footer = "ND Consultas | v1.0"
         )
     }
 }

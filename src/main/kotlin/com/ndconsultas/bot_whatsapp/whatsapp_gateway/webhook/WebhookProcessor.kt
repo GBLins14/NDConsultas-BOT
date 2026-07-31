@@ -10,6 +10,7 @@ import com.ndconsultas.bot_whatsapp.whatsapp_gateway.event.StatusUpdateEvent
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.IncomingMessage
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.MessageType
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.BotStats
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ConsultationSessionManager
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.WhatsappService
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
@@ -21,7 +22,8 @@ class WebhookProcessor(
     private val commandProcessor: CommandProcessor,
     private val eventPublisher: ApplicationEventPublisher,
     private val whatsappService: WhatsappService,
-    private val stats: BotStats
+    private val stats: BotStats,
+    private val sessionManager: ConsultationSessionManager
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(WebhookProcessor::class.java)
@@ -59,35 +61,38 @@ class WebhookProcessor(
                 log.warn("Failed to mark message as read: {}", e.message)
             }
 
+            val ctx = CommandContext(
+                from = message.from,
+                senderName = senderName,
+                messageId = message.id,
+                args = emptyList(),
+                rawMessage = ""
+            )
+
             // Check text commands
             if (incoming.type == MessageType.TEXT && incoming.text != null) {
-                val ctx = CommandContext(
-                    from = message.from,
-                    senderName = senderName,
-                    messageId = message.id,
-                    args = emptyList(),
-                    rawMessage = incoming.text
-                )
-                if (commandProcessor.process(ctx)) return@forEach
+                val textCtx = ctx.copy(rawMessage = incoming.text)
+                if (commandProcessor.process(textCtx)) return@forEach
+
+                // Check if user has a pending consultation — route text as query data
+                val pending = sessionManager.getPending(message.from)
+                if (pending != null) {
+                    val consultCtx = ctx.copy(rawMessage = "/consultar ${pending.tipo} ${incoming.text}")
+                    commandProcessor.process(consultCtx)
+                    return@forEach
+                }
             }
 
             // Check interactive replies (button / list) — route as commands if id starts with /
             if (incoming.type == MessageType.INTERACTIVE) {
                 val replyId = incoming.buttonReplyId ?: incoming.listReplyId
                 if (replyId != null && replyId.startsWith("/")) {
-                    val ctx = CommandContext(
-                        from = message.from,
-                        senderName = senderName,
-                        messageId = message.id,
-                        args = emptyList(),
-                        rawMessage = replyId
-                    )
-                    if (commandProcessor.process(ctx)) return@forEach
+                    if (commandProcessor.process(ctx.copy(rawMessage = replyId))) return@forEach
                 }
             }
 
-            // Publish event for non-command messages
-            eventPublisher.publishEvent(MessageReceivedEvent(this, incoming))
+            // Any non-command message → execute /start as default
+            commandProcessor.process(ctx.copy(rawMessage = "/start"))
         }
     }
 
