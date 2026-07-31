@@ -5,6 +5,7 @@ import com.ndconsultas.bot_whatsapp.whatsapp_gateway.command.CommandContext
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.Button
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.ListRow
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.ListSection
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.AdminService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ConsultationSessionManager
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PdfReportService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.VehicleConsultationService
@@ -18,7 +19,8 @@ import java.time.format.DateTimeFormatter
 class ConsultarCommand(
     private val consultationService: VehicleConsultationService,
     private val sessionManager: ConsultationSessionManager,
-    private val pdfService: PdfReportService
+    private val pdfService: PdfReportService,
+    private val adminService: AdminService
 ) : BotCommand {
 
     override val name = "/consultar"
@@ -80,6 +82,15 @@ class ConsultarCommand(
     )
 
     override fun execute(context: CommandContext, whatsappService: WhatsappService) {
+        // Bot bloqueado: admin pode consultar, usuarios nao
+        if (adminService.isBotBlocked() && !adminService.isAdmin(context.from)) {
+            whatsappService.sendMessage(
+                context.from,
+                "O sistema de consultas esta temporariamente indisponivel.\nTente novamente mais tarde."
+            )
+            return
+        }
+
         when {
             context.args.isEmpty() -> showCategories(context, whatsappService)
             context.args[0] == "cat" && context.args.size >= 2 -> showCategoryTypes(context, whatsappService)

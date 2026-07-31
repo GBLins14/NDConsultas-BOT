@@ -15,6 +15,9 @@ whatsapp:
 central:
   api-key: ${CENTRAL_API_KEY}
 
+admin:
+  phone-number: ${ADMIN_PHONE_NUMBER:}
+
 server:
   port: ${SERVER_PORT:8080}
 

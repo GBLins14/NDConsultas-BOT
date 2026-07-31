@@ -5,10 +5,10 @@ import com.ndconsultas.bot_whatsapp.whatsapp_gateway.command.CommandProcessor
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.dto.incoming.WebhookMessage
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.dto.incoming.WebhookPayload
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.dto.incoming.WebhookValue
-import com.ndconsultas.bot_whatsapp.whatsapp_gateway.event.MessageReceivedEvent
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.event.StatusUpdateEvent
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.IncomingMessage
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.MessageType
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.AdminService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.BotStats
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ConsultationSessionManager
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.WhatsappService
@@ -23,7 +23,8 @@ class WebhookProcessor(
     private val eventPublisher: ApplicationEventPublisher,
     private val whatsappService: WhatsappService,
     private val stats: BotStats,
-    private val sessionManager: ConsultationSessionManager
+    private val sessionManager: ConsultationSessionManager,
+    private val adminService: AdminService
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(WebhookProcessor::class.java)
@@ -61,6 +62,13 @@ class WebhookProcessor(
                 log.warn("Failed to mark message as read: {}", e.message)
             }
 
+            // ── Check ban (admin nunca e afetado) ──────────────────
+            if (adminService.isBanned(message.from) && !adminService.isAdmin(message.from)) {
+                log.info("Mensagem de numero banido ignorada: {}", message.from)
+                whatsappService.sendMessage(message.from, "Seu acesso foi bloqueado. Contate o administrador.")
+                return@forEach
+            }
+
             val ctx = CommandContext(
                 from = message.from,
                 senderName = senderName,
@@ -69,12 +77,24 @@ class WebhookProcessor(
                 rawMessage = ""
             )
 
-            // Check text commands
+            // ── Text messages ──────────────────────────────────────
             if (incoming.type == MessageType.TEXT && incoming.text != null) {
                 val textCtx = ctx.copy(rawMessage = incoming.text)
+
+                // 1. Tentar processar como comando
                 if (commandProcessor.process(textCtx)) return@forEach
 
-                // Check if user has a pending consultation — route text as query data
+                // 2. Admin: verificar acao pendente (ban/unban input)
+                if (adminService.isAdmin(message.from)) {
+                    val pendingAction = adminService.consumePendingAction(message.from)
+                    if (pendingAction != null) {
+                        val adminCtx = ctx.copy(rawMessage = "/admin $pendingAction ${incoming.text}")
+                        commandProcessor.process(adminCtx)
+                        return@forEach
+                    }
+                }
+
+                // 3. Consulta pendente: rotear texto como dado de consulta
                 val pending = sessionManager.getPending(message.from)
                 if (pending != null) {
                     val consultCtx = ctx.copy(rawMessage = "/consultar ${pending.tipo} ${incoming.text}")
@@ -83,7 +103,7 @@ class WebhookProcessor(
                 }
             }
 
-            // Check interactive replies (button / list) — route as commands if id starts with /
+            // ── Interactive replies (button / list) ────────────────
             if (incoming.type == MessageType.INTERACTIVE) {
                 val replyId = incoming.buttonReplyId ?: incoming.listReplyId
                 if (replyId != null && replyId.startsWith("/")) {
@@ -91,7 +111,7 @@ class WebhookProcessor(
                 }
             }
 
-            // Any non-command message → execute /start as default
+            // ── Default: /start ────────────────────────────────────
             commandProcessor.process(ctx.copy(rawMessage = "/start"))
         }
     }
