@@ -88,3 +88,9 @@ data class WhatsappApiContact(
 data class WhatsappApiMessageId(
     val id: String? = null
 )
+
+// ── Media upload response ──────────────────────────────────────────
+
+data class MediaUploadResponse(
+    val id: String
+)

@@ -29,6 +29,7 @@ dependencies {
     implementation("org.springframework.modulith:spring-modulith-starter-core")
     //implementation("org.springframework.modulith:spring-modulith-starter-jpa")
     implementation("tools.jackson.module:jackson-module-kotlin")
+    implementation("com.github.librepdf:openpdf:2.0.3")
     //testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")

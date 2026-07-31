@@ -6,24 +6,33 @@ import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.Button
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.ListRow
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.ListSection
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ConsultationSessionManager
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PdfReportService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.VehicleConsultationService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.WhatsappService
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 @Component
 class ConsultarCommand(
     private val consultationService: VehicleConsultationService,
-    private val sessionManager: ConsultationSessionManager
+    private val sessionManager: ConsultationSessionManager,
+    private val pdfService: PdfReportService
 ) : BotCommand {
 
     override val name = "/consultar"
     override val description = "Painel de consulta veicular"
     override val aliases = listOf("/consulta", "/c")
 
+    companion object {
+        private val log = LoggerFactory.getLogger(ConsultarCommand::class.java)
+        private val FILE_DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
+    }
+
     data class QueryTypeInfo(
         val label: String,
         val inputPrompt: String,
-        val price: String,
         val category: String
     )
 
@@ -33,45 +42,42 @@ class ConsultarCommand(
         val count: Int
     )
 
-    companion object {
-        val QUERY_TYPES = mapOf(
-            // Consulta por Placa
-            "placa_full" to QueryTypeInfo("Placa Full", "Informe a *placa* do veiculo", "R\$ 0,10", "placa"),
-            "placa_duality" to QueryTypeInfo("Placa Duality", "Informe a *placa* do veiculo", "R\$ 0,20", "placa"),
-            "placa_serpro" to QueryTypeInfo("Placa SERPRO", "Informe a *placa* do veiculo", "R\$ 0,20", "placa"),
-            "placa_senatran" to QueryTypeInfo("Placa SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60", "placa"),
-            "bin_placa" to QueryTypeInfo("BIN Placa", "Informe a *placa* do veiculo", "R\$ 0,10", "placa"),
-            "frota" to QueryTypeInfo("Frota Veicular", "Informe o *CPF ou CNPJ* do proprietario", "R\$ 0,20", "placa"),
-            // Chassi e Motor
-            "bin_chassi" to QueryTypeInfo("BIN Chassi", "Informe o *numero do chassi*", "R\$ 0,10", "chassi"),
-            "chassi_serpro" to QueryTypeInfo("Chassi SERPRO", "Informe o *numero do chassi*", "R\$ 0,30", "chassi"),
-            "chassi_senatran" to QueryTypeInfo("Chassi SENATRAN", "Informe o *numero do chassi*", "R\$ 0,60", "chassi"),
-            "bin_motor" to QueryTypeInfo("BIN Motor", "Informe o *numero do motor*", "R\$ 0,10", "chassi"),
-            "motor_senatran" to QueryTypeInfo("Motor SENATRAN", "Informe o *numero do motor*", "R\$ 0,60", "chassi"),
-            // Renavam e CNH
-            "bin_renavam" to QueryTypeInfo("BIN Renavam", "Informe o *numero do RENAVAM*", "R\$ 0,10", "renavam"),
-            "renavam_serpro" to QueryTypeInfo("Renavam SERPRO", "Informe o *numero do RENAVAM*", "R\$ 0,20", "renavam"),
-            "cnh_full" to QueryTypeInfo("CNH Full", "Informe o *CPF* do condutor", "R\$ 0,20", "renavam"),
-            "cnh_serpro" to QueryTypeInfo("CNH SERPRO", "Informe o *CPF* do condutor", "R\$ 0,30", "renavam"),
-            // Laudos Veiculares
-            "laudo_veicular" to QueryTypeInfo("Laudo Veicular", "Informe a *placa* do veiculo", "R\$ 0,25", "laudo"),
-            "laudo_veicular_historico" to QueryTypeInfo("Laudo Historico", "Informe a *placa* do veiculo", "R\$ 0,01", "laudo"),
-            "laudo_veicular_id" to QueryTypeInfo("Laudo por ID", "Informe o *ID do laudo*", "R\$ 0,07", "laudo"),
-            // SENATRAN Avancado
-            "multas_senatran" to QueryTypeInfo("Multas SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60", "senatran"),
-            "ocorrencias_senatran" to QueryTypeInfo("Ocorrencias SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60", "senatran"),
-            "recall_senatran" to QueryTypeInfo("Recall SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60", "senatran"),
-            "renajud_senatran" to QueryTypeInfo("Renajud SENATRAN", "Informe a *placa* do veiculo", "R\$ 0,60", "senatran")
-        )
+    private val queryTypes = mapOf(
+        // Consulta por Placa
+        "placa_full" to QueryTypeInfo("Placa Full", "Informe a *placa* do veiculo", "placa"),
+        "placa_duality" to QueryTypeInfo("Placa Duality", "Informe a *placa* do veiculo", "placa"),
+        "placa_serpro" to QueryTypeInfo("Placa SERPRO", "Informe a *placa* do veiculo", "placa"),
+        "placa_senatran" to QueryTypeInfo("Placa SENATRAN", "Informe a *placa* do veiculo", "placa"),
+        "bin_placa" to QueryTypeInfo("BIN Placa", "Informe a *placa* do veiculo", "placa"),
+        "frota" to QueryTypeInfo("Frota Veicular", "Informe o *CPF ou CNPJ* do proprietario", "placa"),
+        // Chassi e Motor
+        "bin_chassi" to QueryTypeInfo("BIN Chassi", "Informe o *numero do chassi*", "chassi"),
+        "chassi_serpro" to QueryTypeInfo("Chassi SERPRO", "Informe o *numero do chassi*", "chassi"),
+        "chassi_senatran" to QueryTypeInfo("Chassi SENATRAN", "Informe o *numero do chassi*", "chassi"),
+        "bin_motor" to QueryTypeInfo("BIN Motor", "Informe o *numero do motor*", "chassi"),
+        "motor_senatran" to QueryTypeInfo("Motor SENATRAN", "Informe o *numero do motor*", "chassi"),
+        // Renavam e CNH
+        "bin_renavam" to QueryTypeInfo("BIN Renavam", "Informe o *numero do RENAVAM*", "renavam"),
+        "renavam_serpro" to QueryTypeInfo("Renavam SERPRO", "Informe o *numero do RENAVAM*", "renavam"),
+        "cnh_full" to QueryTypeInfo("CNH Full", "Informe o *CPF* do condutor", "renavam"),
+        "cnh_serpro" to QueryTypeInfo("CNH SERPRO", "Informe o *CPF* do condutor", "renavam"),
+        // Laudos Veiculares
+        "laudo_veicular" to QueryTypeInfo("Laudo Veicular", "Informe a *placa* do veiculo", "laudo"),
+        "laudo_veicular_id" to QueryTypeInfo("Laudo por ID", "Informe o *ID do laudo*", "laudo"),
+        // SENATRAN Avancado
+        "multas_senatran" to QueryTypeInfo("Multas SENATRAN", "Informe a *placa* do veiculo", "senatran"),
+        "ocorrencias_senatran" to QueryTypeInfo("Ocorrencias SENATRAN", "Informe a *placa* do veiculo", "senatran"),
+        "recall_senatran" to QueryTypeInfo("Recall SENATRAN", "Informe a *placa* do veiculo", "senatran"),
+        "renajud_senatran" to QueryTypeInfo("Renajud SENATRAN", "Informe a *placa* do veiculo", "senatran")
+    )
 
-        val CATEGORIES = linkedMapOf(
-            "placa" to CategoryInfo("Consulta por Placa", "Placa, BIN e Frota", 6),
-            "chassi" to CategoryInfo("Chassi e Motor", "Chassi e Motor", 5),
-            "renavam" to CategoryInfo("Renavam e CNH", "Renavam e CNH", 4),
-            "laudo" to CategoryInfo("Laudos Veiculares", "Laudos e Historico", 3),
-            "senatran" to CategoryInfo("SENATRAN Avancado", "Multas, Recall e mais", 4)
-        )
-    }
+    private val categories = linkedMapOf(
+        "placa" to CategoryInfo("Consulta por Placa", "Placa, BIN e Frota", 6),
+        "chassi" to CategoryInfo("Chassi e Motor", "Chassi e Motor", 5),
+        "renavam" to CategoryInfo("Renavam e CNH", "Renavam e CNH", 4),
+        "laudo" to CategoryInfo("Laudos Veiculares", "Laudo e Laudo por ID", 2),
+        "senatran" to CategoryInfo("SENATRAN Avancado", "Multas, Recall e mais", 4)
+    )
 
     override fun execute(context: CommandContext, whatsappService: WhatsappService) {
         when {
@@ -90,15 +96,14 @@ class ConsultarCommand(
             header = "Consulta Veicular",
             body = buildString {
                 append("Bem-vindo ao *Painel de Consultas Veiculares*\n\n")
-                append("Selecione uma categoria para ver os modulos disponiveis.\n\n")
-                append("*22 modulos* organizados em *5 categorias*.")
+                append("Selecione uma categoria para ver os modulos disponiveis.")
             },
             buttonLabel = "Ver Categorias",
             footer = "ND Consultas | Veicular",
             sections = listOf(
                 ListSection(
                     title = "Categorias",
-                    rows = CATEGORIES.map { (key, cat) ->
+                    rows = categories.map { (key, cat) ->
                         ListRow(
                             id = "/consultar cat $key",
                             title = cat.label,
@@ -114,7 +119,7 @@ class ConsultarCommand(
 
     private fun showCategoryTypes(context: CommandContext, whatsappService: WhatsappService) {
         val catKey = context.args[1]
-        val category = CATEGORIES[catKey]
+        val category = categories[catKey]
 
         if (category == null) {
             whatsappService.sendMessage(
@@ -124,12 +129,12 @@ class ConsultarCommand(
             return
         }
 
-        val types = QUERY_TYPES.filter { it.value.category == catKey }
+        val types = queryTypes.filter { it.value.category == catKey }
 
         whatsappService.sendList(
             to = context.from,
             header = category.label,
-            body = "Selecione o tipo de consulta que deseja realizar.\nCada modulo possui um custo indicado na descricao.",
+            body = "Selecione o tipo de consulta que deseja realizar.",
             buttonLabel = "Ver Modulos",
             footer = "ND Consultas | ${category.label}",
             sections = listOf(
@@ -139,7 +144,7 @@ class ConsultarCommand(
                         ListRow(
                             id = "/consultar $tipo",
                             title = info.label,
-                            description = "${info.inputPrompt.replace("*", "")} | ${info.price}"
+                            description = info.inputPrompt.replace("*", "")
                         )
                     }
                 )
@@ -151,7 +156,7 @@ class ConsultarCommand(
 
     private fun promptForData(context: CommandContext, whatsappService: WhatsappService) {
         val tipo = context.args[0]
-        val info = QUERY_TYPES[tipo]
+        val info = queryTypes[tipo]
 
         if (info == null) {
             whatsappService.sendMessage(
@@ -165,11 +170,7 @@ class ConsultarCommand(
 
         whatsappService.sendMessage(
             context.from,
-            buildString {
-                append("*${info.label}*\n")
-                append("Custo: ${info.price}\n\n")
-                append("${info.inputPrompt}:")
-            }
+            "*${info.label}*\n\n${info.inputPrompt}:"
         )
     }
 
@@ -178,7 +179,7 @@ class ConsultarCommand(
     private fun executeQuery(context: CommandContext, whatsappService: WhatsappService) {
         val tipo = context.args[0]
         val query = context.args.drop(1).joinToString(" ").trim()
-        val info = QUERY_TYPES[tipo]
+        val info = queryTypes[tipo]
 
         if (info == null) {
             whatsappService.sendMessage(
@@ -190,19 +191,36 @@ class ConsultarCommand(
 
         sessionManager.removePending(context.from)
 
-        whatsappService.sendReaction(context.from, context.messageId, "\u23F3")
+        // Reaction de "processando"
+        try {
+            whatsappService.sendReaction(context.from, context.messageId, "\u23F3")
+        } catch (e: Exception) {
+            log.warn("Falha ao enviar reaction de processamento: {}", e.message)
+        }
 
         whatsappService.sendMessage(
             context.from,
             "Consultando *${info.label}*...\nAguarde um momento."
         )
 
+        // Consultar API
         val result = consultationService.consultar(tipo, query)
 
-        whatsappService.removeReaction(context.from, context.messageId)
+        // Remover reaction de "processando"
+        try {
+            whatsappService.removeReaction(context.from, context.messageId)
+        } catch (e: Exception) {
+            log.warn("Falha ao remover reaction: {}", e.message)
+        }
 
+        // Erro na consulta
         if (!result.success) {
-            whatsappService.sendReaction(context.from, context.messageId, "\u274C")
+            try {
+                whatsappService.sendReaction(context.from, context.messageId, "\u274C")
+            } catch (e: Exception) {
+                log.warn("Falha ao enviar reaction de erro: {}", e.message)
+            }
+
             whatsappService.sendMessage(
                 context.from,
                 buildString {
@@ -212,11 +230,12 @@ class ConsultarCommand(
                     append(result.error ?: "Erro desconhecido.")
                 }
             )
+
             whatsappService.sendButtons(
                 to = context.from,
                 body = "O que deseja fazer?",
                 buttons = listOf(
-                    Button(id = "/consultar cat ${info.category}", title = "Tentar Novamente"),
+                    Button(id = "/consultar $tipo", title = "Tentar Novamente"),
                     Button(id = "/consultar", title = "Outra Consulta"),
                     Button(id = "/start", title = "Menu Inicial")
                 )
@@ -224,28 +243,20 @@ class ConsultarCommand(
             return
         }
 
-        whatsappService.sendReaction(context.from, context.messageId, "\u2705")
+        // Consulta OK — reagir com check
+        try {
+            whatsappService.sendReaction(context.from, context.messageId, "\u2705")
+        } catch (e: Exception) {
+            log.warn("Falha ao enviar reaction de sucesso: {}", e.message)
+        }
 
-        val formattedData = formatResult(result.data)
-        val messages = splitMessage(formattedData, 3500)
+        // Tentar gerar PDF e enviar como documento
+        val pdfSent = trySendPdf(context, whatsappService, info, tipo, query, result.data)
 
-        // Header
-        whatsappService.sendMessage(
-            context.from,
-            buildString {
-                append("*${info.label}*\n")
-                append("Dado consultado: $query\n")
-                if (result.custo != null || result.saldoRestante != null) {
-                    append("\n")
-                    if (result.custo != null) append("Custo: ${result.custo}\n")
-                    if (result.saldoRestante != null) append("Saldo restante: ${result.saldoRestante}\n")
-                }
-            }
-        )
-
-        // Data
-        messages.forEach { msg ->
-            whatsappService.sendMessage(context.from, msg)
+        // Fallback: se o PDF falhar, envia como texto
+        if (!pdfSent) {
+            log.warn("Fallback para envio de texto — PDF falhou para {} query={}", tipo, query)
+            sendResultAsText(context, whatsappService, info, query, result.data)
         }
 
         // Follow-up
@@ -259,7 +270,63 @@ class ConsultarCommand(
         )
     }
 
-    // ── Formatacao de resultado ─────────────────────────────────────
+    // ── Envio de PDF ───────────────────────────────────────────────
+
+    private fun trySendPdf(
+        context: CommandContext,
+        whatsappService: WhatsappService,
+        info: QueryTypeInfo,
+        tipo: String,
+        query: String,
+        data: Map<String, Any?>
+    ): Boolean {
+        return try {
+            // Gerar PDF
+            val pdfBytes = pdfService.generate(info.label, query, data)
+            val timestamp = LocalDateTime.now().format(FILE_DATE_FMT)
+            val filename = "consulta_${tipo}_${timestamp}.pdf"
+
+            // Upload para WhatsApp Media API
+            val mediaId = whatsappService.uploadMedia(pdfBytes, "application/pdf", filename)
+
+            // Enviar documento
+            whatsappService.sendDocumentById(
+                to = context.from,
+                mediaId = mediaId,
+                filename = filename,
+                caption = "${info.label} - $query"
+            )
+
+            true
+        } catch (e: Exception) {
+            log.error("Erro ao gerar/enviar PDF [{}] query={}: {}", tipo, query, e.message, e)
+            false
+        }
+    }
+
+    // ── Fallback: envio como texto ─────────────────────────────────
+
+    private fun sendResultAsText(
+        context: CommandContext,
+        whatsappService: WhatsappService,
+        info: QueryTypeInfo,
+        query: String,
+        data: Map<String, Any?>
+    ) {
+        whatsappService.sendMessage(
+            context.from,
+            "*${info.label}*\nDado consultado: $query"
+        )
+
+        val formattedData = formatResult(data)
+        val messages = splitMessage(formattedData, 3500)
+
+        messages.forEach { msg ->
+            whatsappService.sendMessage(context.from, msg)
+        }
+    }
+
+    // ── Formatacao de resultado (fallback texto) ───────────────────
 
     private fun formatResult(data: Map<String, Any?>): String {
         if (data.isEmpty()) return "_Nenhum dado retornado para esta consulta._"

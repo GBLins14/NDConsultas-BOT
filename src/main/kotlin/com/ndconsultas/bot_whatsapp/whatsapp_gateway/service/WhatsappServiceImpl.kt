@@ -218,6 +218,21 @@ class WhatsappServiceImpl(
         return send(payload)
     }
 
+    // ── Media upload + document by ID ─────────────────────────────
+
+    override fun uploadMedia(fileBytes: ByteArray, mimeType: String, filename: String): String {
+        return apiClient.uploadMedia(fileBytes, mimeType, filename)
+    }
+
+    override fun sendDocumentById(to: String, mediaId: String, filename: String, caption: String?): MessageResponse {
+        val payload = MessagePayload(
+            to = to,
+            type = "document",
+            document = DocumentBody(id = mediaId, filename = filename, caption = caption)
+        )
+        return send(payload)
+    }
+
     // ── Status ──────────────────────────────────────────────────────
 
     override fun markAsRead(messageId: String) {
