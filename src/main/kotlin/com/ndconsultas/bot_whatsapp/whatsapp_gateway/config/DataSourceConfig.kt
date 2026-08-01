@@ -6,40 +6,91 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import java.net.URI
 import javax.sql.DataSource
 
 @Configuration
 class DataSourceConfig(
-    @Value("\${DATABASE_URL}") private val rawUrl: String
+
+    @Value("\${DATABASE_URL}")
+    private val rawUrl: String
+
 ) {
+
     companion object {
         private val log = LoggerFactory.getLogger(DataSourceConfig::class.java)
     }
 
     @Bean
     fun dataSource(): DataSource {
-        // Aceita tanto postgresql:// quanto postgres:// (formato Neon/Render)
-        // e converte para jdbc:postgresql:// esperado pelo driver JDBC
-        val jdbcUrl = when {
-            rawUrl.startsWith("jdbc:") -> rawUrl
-            rawUrl.startsWith("postgresql://") -> "jdbc:${rawUrl}"
-            rawUrl.startsWith("postgres://") -> "jdbc:postgresql://${rawUrl.removePrefix("postgres://")}"
-            else -> error("DATABASE_URL inválida: deve começar com postgresql://, postgres:// ou jdbc:postgresql://")
+
+        val normalizedUrl = when {
+            rawUrl.startsWith("jdbc:postgresql://") ->
+                rawUrl.removePrefix("jdbc:")
+
+            rawUrl.startsWith("postgresql://") ->
+                rawUrl
+
+            rawUrl.startsWith("postgres://") ->
+                "postgresql://${rawUrl.removePrefix("postgres://")}"
+
+            else ->
+                error(
+                    "DATABASE_URL inválida. Esperado postgres://, postgresql:// ou jdbc:postgresql://"
+                )
         }
 
-        log.info("DataSource configurado para: {}", jdbcUrl.replace(Regex(":[^:@]+@"), ":***@"))
+        val uri = URI(normalizedUrl)
 
-        val config = HikariConfig().apply {
+        val userInfo = uri.userInfo
+            ?: error("DATABASE_URL não possui usuário e senha.")
+
+        val credentials = userInfo.split(":", limit = 2)
+
+        val username = credentials[0]
+
+        val password = credentials.getOrElse(1) { "" }
+
+        val jdbcUrl = buildString {
+            append("jdbc:postgresql://")
+            append(uri.host)
+
+            if (uri.port != -1) {
+                append(":")
+                append(uri.port)
+            }
+
+            append(uri.path)
+
+            if (!uri.query.isNullOrBlank()) {
+                append("?")
+                append(uri.query)
+            }
+        }
+
+        log.info("Conectando ao PostgreSQL: {}", jdbcUrl)
+
+        val hikari = HikariConfig().apply {
+
             this.jdbcUrl = jdbcUrl
+            this.username = username
+            this.password = password
+
             driverClassName = "org.postgresql.Driver"
+
             maximumPoolSize = 3
+            minimumIdle = 1
+
             connectionTimeout = 30_000
-            // Neon encerra conexões ociosas — reconectar automaticamente
             idleTimeout = 600_000
             maxLifetime = 1_800_000
             keepaliveTime = 60_000
+
+            validationTimeout = 5_000
+
+            isAutoCommit = true
         }
 
-        return HikariDataSource(config)
+        return HikariDataSource(hikari)
     }
 }
