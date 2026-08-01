@@ -6,11 +6,13 @@ import com.ndconsultas.bot_whatsapp.whatsapp_gateway.dto.incoming.WebhookMessage
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.dto.incoming.WebhookPayload
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.dto.incoming.WebhookValue
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.event.StatusUpdateEvent
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.Button
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.IncomingMessage
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.MessageType
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.AdminService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.BotStats
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ConsultationSessionManager
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PaymentSessionManager
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.WhatsappService
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
@@ -24,7 +26,8 @@ class WebhookProcessor(
     private val whatsappService: WhatsappService,
     private val stats: BotStats,
     private val sessionManager: ConsultationSessionManager,
-    private val adminService: AdminService
+    private val adminService: AdminService,
+    private val paymentSessionManager: PaymentSessionManager
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(WebhookProcessor::class.java)
@@ -99,6 +102,31 @@ class WebhookProcessor(
                 if (pending != null) {
                     val consultCtx = ctx.copy(rawMessage = "/consultar ${pending.tipo} ${incoming.text}")
                     commandProcessor.process(consultCtx)
+                    return@forEach
+                }
+
+                // 4. Coleta de cartao: rotear texto como input de cartao
+                val paymentSession = paymentSessionManager.getSession(message.from)
+                if (paymentSession != null && paymentSession.status == PaymentSessionManager.PaymentStatus.COLLECTING_CARD) {
+                    val cardCtx = ctx.copy(rawMessage = "/consultar cartao_input ${incoming.text}")
+                    commandProcessor.process(cardCtx)
+                    return@forEach
+                }
+
+                // 5. Pagamento PIX pendente: lembrar o usuario
+                if (paymentSession != null && paymentSession.status == PaymentSessionManager.PaymentStatus.AWAITING_PAYMENT) {
+                    whatsappService.sendMessage(
+                        message.from,
+                        "Voce possui um pagamento pendente de *R\$ ${"%.2f".format(paymentSession.price)}* para *${paymentSession.tipoLabel}*.\n\nEfetue o pagamento via PIX para liberar a consulta."
+                    )
+                    whatsappService.sendButtons(
+                        to = message.from,
+                        body = "O que deseja fazer?",
+                        buttons = listOf(
+                            Button(id = "/consultar cancelar_pgto", title = "Cancelar Consulta"),
+                            Button(id = "/start", title = "Menu Inicial")
+                        )
+                    )
                     return@forEach
                 }
             }

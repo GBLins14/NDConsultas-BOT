@@ -32,8 +32,9 @@ interface WhatsappService {
     fun sendReaction(to: String, messageId: String, emoji: String): MessageResponse
     fun removeReaction(to: String, messageId: String): MessageResponse
 
-    // ── Media upload + document by ID ─────────────────────────────
+    // ── Media upload + send by ID ──────────────────────────────────
     fun uploadMedia(fileBytes: ByteArray, mimeType: String, filename: String): String
+    fun sendImageById(to: String, mediaId: String, caption: String? = null): MessageResponse
     fun sendDocumentById(to: String, mediaId: String, filename: String, caption: String? = null): MessageResponse
 
     // ── Status ──────────────────────────────────────────────────────

@@ -18,6 +18,11 @@ central:
 admin:
   phone-number: ${ADMIN_PHONE_NUMBER}
 
+syncpay:
+  api-url: ${SYNCPAY_API_URL:https://api.syncpay.com.br}
+  api-key: ${SYNCPAY_API_KEY}
+  webhook-url: ${SYNCPAY_WEBHOOK_URL}
+
 server:
   port: ${SERVER_PORT:8080}
 

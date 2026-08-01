@@ -224,6 +224,15 @@ class WhatsappServiceImpl(
         return apiClient.uploadMedia(fileBytes, mimeType, filename)
     }
 
+    override fun sendImageById(to: String, mediaId: String, caption: String?): MessageResponse {
+        val payload = MessagePayload(
+            to = to,
+            type = "image",
+            image = MediaBody(id = mediaId, caption = caption)
+        )
+        return send(payload)
+    }
+
     override fun sendDocumentById(to: String, mediaId: String, filename: String, caption: String?): MessageResponse {
         val payload = MessagePayload(
             to = to,

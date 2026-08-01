@@ -2,17 +2,23 @@ package com.ndconsultas.bot_whatsapp.whatsapp_gateway.command.impl
 
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.command.BotCommand
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.command.CommandContext
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.config.QueryTypeRegistry
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.Button
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.ListRow
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.ListSection
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.AdminService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ConsultationSessionManager
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ConsultationStats
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PaymentService
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PaymentSessionManager
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PaymentStats
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PdfReportService
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PricingService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.VehicleConsultationService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.WhatsappService
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
+import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -22,7 +28,12 @@ class ConsultarCommand(
     private val sessionManager: ConsultationSessionManager,
     private val pdfService: PdfReportService,
     private val adminService: AdminService,
-    private val consultationStats: ConsultationStats
+    private val consultationStats: ConsultationStats,
+    private val pricingService: PricingService,
+    private val paymentSessionManager: PaymentSessionManager,
+    private val paymentStats: PaymentStats,
+    private val paymentService: PaymentService,
+    private val queryTypeRegistry: QueryTypeRegistry
 ) : BotCommand {
 
     override val name = "/consultar"
@@ -33,55 +44,6 @@ class ConsultarCommand(
         private val log = LoggerFactory.getLogger(ConsultarCommand::class.java)
         private val FILE_DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
     }
-
-    data class QueryTypeInfo(
-        val label: String,
-        val inputPrompt: String,
-        val category: String
-    )
-
-    data class CategoryInfo(
-        val label: String,
-        val description: String,
-        val count: Int
-    )
-
-    private val queryTypes = mapOf(
-        // Consulta por Placa
-        "placa_full" to QueryTypeInfo("Placa Full", "Informe a *placa* do veiculo", "placa"),
-        "placa_duality" to QueryTypeInfo("Placa Duality", "Informe a *placa* do veiculo", "placa"),
-        "placa_serpro" to QueryTypeInfo("Placa SERPRO", "Informe a *placa* do veiculo", "placa"),
-        "placa_senatran" to QueryTypeInfo("Placa SENATRAN", "Informe a *placa* do veiculo", "placa"),
-        "bin_placa" to QueryTypeInfo("BIN Placa", "Informe a *placa* do veiculo", "placa"),
-        "frota" to QueryTypeInfo("Frota Veicular", "Informe o *CPF ou CNPJ* do proprietario", "placa"),
-        // Chassi e Motor
-        "bin_chassi" to QueryTypeInfo("BIN Chassi", "Informe o *numero do chassi*", "chassi"),
-        "chassi_serpro" to QueryTypeInfo("Chassi SERPRO", "Informe o *numero do chassi*", "chassi"),
-        "chassi_senatran" to QueryTypeInfo("Chassi SENATRAN", "Informe o *numero do chassi*", "chassi"),
-        "bin_motor" to QueryTypeInfo("BIN Motor", "Informe o *numero do motor*", "chassi"),
-        "motor_senatran" to QueryTypeInfo("Motor SENATRAN", "Informe o *numero do motor*", "chassi"),
-        // Renavam e CNH
-        "bin_renavam" to QueryTypeInfo("BIN Renavam", "Informe o *numero do RENAVAM*", "renavam"),
-        "renavam_serpro" to QueryTypeInfo("Renavam SERPRO", "Informe o *numero do RENAVAM*", "renavam"),
-        "cnh_full" to QueryTypeInfo("CNH Full", "Informe o *CPF* do condutor", "renavam"),
-        "cnh_serpro" to QueryTypeInfo("CNH SERPRO", "Informe o *CPF* do condutor", "renavam"),
-        // Laudos Veiculares
-        "laudo_veicular" to QueryTypeInfo("Laudo Veicular", "Informe a *placa* do veiculo", "laudo"),
-        "laudo_veicular_id" to QueryTypeInfo("Laudo por ID", "Informe o *ID do laudo*", "laudo"),
-        // SENATRAN Avancado
-        "multas_senatran" to QueryTypeInfo("Multas SENATRAN", "Informe a *placa* do veiculo", "senatran"),
-        "ocorrencias_senatran" to QueryTypeInfo("Ocorrencias SENATRAN", "Informe a *placa* do veiculo", "senatran"),
-        "recall_senatran" to QueryTypeInfo("Recall SENATRAN", "Informe a *placa* do veiculo", "senatran"),
-        "renajud_senatran" to QueryTypeInfo("Renajud SENATRAN", "Informe a *placa* do veiculo", "senatran")
-    )
-
-    private val categories = linkedMapOf(
-        "placa" to CategoryInfo("Consulta por Placa", "Placa, BIN e Frota", 6),
-        "chassi" to CategoryInfo("Chassi e Motor", "Chassi e Motor", 5),
-        "renavam" to CategoryInfo("Renavam e CNH", "Renavam e CNH", 4),
-        "laudo" to CategoryInfo("Laudos Veiculares", "Laudo e Laudo por ID", 2),
-        "senatran" to CategoryInfo("SENATRAN Avancado", "Multas, Recall e mais", 4)
-    )
 
     override fun execute(context: CommandContext, whatsappService: WhatsappService) {
         // Bot bloqueado: admin pode consultar, usuarios nao
@@ -96,6 +58,11 @@ class ConsultarCommand(
         when {
             context.args.isEmpty() -> showCategories(context, whatsappService)
             context.args[0] == "cat" && context.args.size >= 2 -> showCategoryTypes(context, whatsappService)
+            context.args[0] == "cancelar_pgto" -> cancelPayment(context, whatsappService)
+            context.args[0] == "pago" -> executeFromPayment(context, whatsappService)
+            context.args[0] == "pgto_pix" -> handlePixPayment(context, whatsappService)
+            context.args[0] == "pgto_cartao" -> startCardPayment(context, whatsappService)
+            context.args[0] == "cartao_input" -> handleCardInput(context, whatsappService)
             context.args.size == 1 -> promptForData(context, whatsappService)
             else -> executeQuery(context, whatsappService)
         }
@@ -104,6 +71,25 @@ class ConsultarCommand(
     // ── Step 1: Categorias ─────────────────────────────────────────
 
     private fun showCategories(context: CommandContext, whatsappService: WhatsappService) {
+        val isAdmin = adminService.isAdmin(context.from)
+
+        // Filtrar categorias que tem pelo menos 1 modulo ativo (admin ve todas)
+        val visibleCategories = if (isAdmin) {
+            queryTypeRegistry.categories.toList()
+        } else {
+            queryTypeRegistry.categories.filter { (catKey, _) ->
+                queryTypeRegistry.getTypesForCategory(catKey).any { pricingService.isModuleEnabled(it.key) }
+            }.toList()
+        }
+
+        if (visibleCategories.isEmpty()) {
+            whatsappService.sendMessage(
+                context.from,
+                "Nenhum modulo de consulta disponivel no momento.\nTente novamente mais tarde."
+            )
+            return
+        }
+
         whatsappService.sendList(
             to = context.from,
             header = "Consulta Veicular",
@@ -116,11 +102,13 @@ class ConsultarCommand(
             sections = listOf(
                 ListSection(
                     title = "Categorias",
-                    rows = categories.map { (key, cat) ->
+                    rows = visibleCategories.map { (key, cat) ->
+                        val activeCount = if (isAdmin) cat.count
+                            else queryTypeRegistry.getTypesForCategory(key).count { pricingService.isModuleEnabled(it.key) }
                         ListRow(
                             id = "/consultar cat $key",
                             title = cat.label,
-                            description = "${cat.description} (${cat.count} modulos)"
+                            description = "${cat.description} ($activeCount modulos)"
                         )
                     }
                 )
@@ -132,7 +120,7 @@ class ConsultarCommand(
 
     private fun showCategoryTypes(context: CommandContext, whatsappService: WhatsappService) {
         val catKey = context.args[1]
-        val category = categories[catKey]
+        val category = queryTypeRegistry.categories[catKey]
 
         if (category == null) {
             whatsappService.sendMessage(
@@ -142,7 +130,20 @@ class ConsultarCommand(
             return
         }
 
-        val types = queryTypes.filter { it.value.category == catKey }
+        val allTypes = queryTypeRegistry.getTypesForCategory(catKey)
+        val isAdmin = adminService.isAdmin(context.from)
+
+        // Admin ve todos; usuarios so veem modulos ativos
+        val types = if (isAdmin) allTypes
+            else allTypes.filter { pricingService.isModuleEnabled(it.key) }
+
+        if (types.isEmpty()) {
+            whatsappService.sendMessage(
+                context.from,
+                "Nenhum modulo disponivel nesta categoria no momento.\nTente outra categoria."
+            )
+            return
+        }
 
         whatsappService.sendList(
             to = context.from,
@@ -154,10 +155,16 @@ class ConsultarCommand(
                 ListSection(
                     title = category.label,
                     rows = types.map { (tipo, info) ->
+                        val price = pricingService.getPrice(tipo)
+                        val priceText = when {
+                            isAdmin -> "Gratis (Admin)"
+                            price > BigDecimal.ZERO -> "R\$ ${"%.2f".format(price)}"
+                            else -> "Gratis"
+                        }
                         ListRow(
                             id = "/consultar $tipo",
                             title = info.label,
-                            description = info.inputPrompt.replace("*", "")
+                            description = "$priceText | ${info.inputPrompt.replace("*", "")}"
                         )
                     }
                 )
@@ -169,21 +176,29 @@ class ConsultarCommand(
 
     private fun promptForData(context: CommandContext, whatsappService: WhatsappService) {
         val tipo = context.args[0]
-        val info = queryTypes[tipo]
+        val info = queryTypeRegistry.getTypeInfo(tipo)
 
-        if (info == null) {
+        if (info == null || (!pricingService.isModuleEnabled(tipo) && !adminService.isAdmin(context.from))) {
             whatsappService.sendMessage(
                 context.from,
-                "Tipo de consulta invalido.\nUse /consultar para ver as opcoes disponiveis."
+                "Tipo de consulta invalido ou indisponivel.\nUse /consultar para ver as opcoes disponiveis."
             )
             return
         }
 
         sessionManager.setPending(context.from, tipo, info.label)
 
+        val isAdmin = adminService.isAdmin(context.from)
+        val price = pricingService.getPrice(tipo)
+        val priceText = when {
+            isAdmin -> ""
+            price > BigDecimal.ZERO -> "\nValor: *R\$ ${"%.2f".format(price)}*"
+            else -> ""
+        }
+
         whatsappService.sendMessage(
             context.from,
-            "*${info.label}*\n\n${info.inputPrompt}:"
+            "*${info.label}*$priceText\n\n${info.inputPrompt}:"
         )
     }
 
@@ -192,23 +207,320 @@ class ConsultarCommand(
     private fun executeQuery(context: CommandContext, whatsappService: WhatsappService) {
         val tipo = context.args[0]
         val query = context.args.drop(1).joinToString(" ").trim()
-        val info = queryTypes[tipo]
+        val info = queryTypeRegistry.getTypeInfo(tipo)
 
-        if (info == null) {
+        if (info == null || (!pricingService.isModuleEnabled(tipo) && !adminService.isAdmin(context.from))) {
             whatsappService.sendMessage(
                 context.from,
-                "Tipo de consulta invalido.\nUse /consultar para ver as opcoes disponiveis."
+                "Tipo de consulta invalido ou indisponivel.\nUse /consultar para ver as opcoes disponiveis."
             )
             return
         }
 
         sessionManager.removePending(context.from)
 
+        val price = pricingService.getPrice(tipo)
+        val isAdmin = adminService.isAdmin(context.from)
+
+        // Admin nunca paga
+        if (price > BigDecimal.ZERO && !isAdmin) {
+            val paymentSession = paymentSessionManager.getSession(context.from)
+            if (paymentSession != null && paymentSession.status == PaymentSessionManager.PaymentStatus.PAID) {
+                // Pagamento confirmado — consumir e prosseguir
+                paymentSessionManager.consume(context.from)
+            } else {
+                // Criar sessao e oferecer metodos de pagamento
+                paymentSessionManager.create(context.from, tipo, info.label, query, price)
+
+                whatsappService.sendMessage(
+                    context.from,
+                    buildString {
+                        append("*Pagamento Necessario*\n\n")
+                        append("Consulta: *${info.label}*\n")
+                        append("Dado: $query\n")
+                        append("Valor: *R\$ ${"%.2f".format(price)}*\n\n")
+                        append("Escolha a forma de pagamento:")
+                    }
+                )
+
+                whatsappService.sendButtons(
+                    to = context.from,
+                    body = "Como deseja pagar?",
+                    buttons = listOf(
+                        Button(id = "/consultar pgto_pix", title = "PIX"),
+                        Button(id = "/consultar pgto_cartao", title = "Cartao de Credito"),
+                        Button(id = "/consultar cancelar_pgto", title = "Cancelar")
+                    )
+                )
+                return
+            }
+        }
+
+        // Executar consulta
+        performQuery(context, whatsappService, tipo, info, query)
+    }
+
+    // ── Pagamento PIX ──────────────────────────────────────────────
+
+    private fun handlePixPayment(context: CommandContext, whatsappService: WhatsappService) {
+        val session = paymentSessionManager.getSession(context.from)
+        if (session == null) {
+            whatsappService.sendMessage(context.from, "Sessao de pagamento expirada. Inicie uma nova consulta.")
+            return
+        }
+
+        whatsappService.sendMessage(context.from, "Gerando PIX... Aguarde um momento.")
+
+        val result = paymentService.generatePix(
+            userPhone = context.from,
+            amount = session.price,
+            description = "ND Consultas - ${session.tipoLabel}"
+        )
+
+        if (!result.success) {
+            whatsappService.sendMessage(context.from, result.error ?: "Erro ao gerar PIX.")
+            whatsappService.sendButtons(
+                to = context.from,
+                body = "O que deseja fazer?",
+                buttons = listOf(
+                    Button(id = "/consultar pgto_pix", title = "Tentar Novamente"),
+                    Button(id = "/consultar cancelar_pgto", title = "Cancelar")
+                )
+            )
+            return
+        }
+
+        // Enviar QR Code como imagem
+        if (result.qrCodeBytes != null) {
+            try {
+                val mediaId = whatsappService.uploadMedia(result.qrCodeBytes, "image/png", "pix_qrcode.png")
+                whatsappService.sendImageById(
+                    to = context.from,
+                    mediaId = mediaId,
+                    caption = "QR Code PIX - R\$ ${"%.2f".format(session.price)}"
+                )
+            } catch (e: Exception) {
+                log.warn("Falha ao enviar QR Code como imagem: {}", e.message)
+            }
+        }
+
+        // Enviar copia e cola
+        whatsappService.sendMessage(
+            context.from,
+            buildString {
+                append("*PIX Copia e Cola*\n\n")
+                append("Valor: *R\$ ${"%.2f".format(session.price)}*\n\n")
+                append("Copie o codigo abaixo:\n\n")
+                append("```\n${result.pixCode}\n```\n\n")
+                append("Apos o pagamento, sua consulta sera processada automaticamente.")
+            }
+        )
+
+        whatsappService.sendButtons(
+            to = context.from,
+            body = "Aguardando pagamento PIX...",
+            buttons = listOf(
+                Button(id = "/consultar cancelar_pgto", title = "Cancelar"),
+                Button(id = "/start", title = "Menu Inicial")
+            )
+        )
+    }
+
+    // ── Pagamento Cartao: iniciar coleta ───────────────────────────
+
+    private fun startCardPayment(context: CommandContext, whatsappService: WhatsappService) {
+        val session = paymentSessionManager.getSession(context.from)
+        if (session == null) {
+            whatsappService.sendMessage(context.from, "Sessao de pagamento expirada. Inicie uma nova consulta.")
+            return
+        }
+
+        paymentSessionManager.setMethodCard(context.from)
+
+        whatsappService.sendMessage(
+            context.from,
+            "*Pagamento com Cartao de Credito*\n\nValor: *R\$ ${"%.2f".format(session.price)}*\n\nInforme o *numero do cartao*:"
+        )
+    }
+
+    // ── Pagamento Cartao: processar input step-by-step ─────────────
+
+    fun handleCardInput(context: CommandContext, whatsappService: WhatsappService) {
+        val session = paymentSessionManager.getSession(context.from)
+        if (session == null || session.status != PaymentSessionManager.PaymentStatus.COLLECTING_CARD) {
+            whatsappService.sendMessage(context.from, "Sessao de pagamento expirada. Inicie uma nova consulta.")
+            return
+        }
+
+        val input = context.args.drop(1).joinToString(" ").trim()
+        val cardInput = session.cardInput ?: PaymentSessionManager.CardInput()
+        val step = cardInput.currentStep()
+
+        val updated = when (step) {
+            "card_number" -> {
+                val number = input.replace(Regex("[^0-9]"), "")
+                if (number.length < 13 || number.length > 19) {
+                    whatsappService.sendMessage(context.from, "Numero de cartao invalido. Informe novamente:")
+                    return
+                }
+                cardInput.copy(number = number)
+            }
+            "card_holder" -> {
+                if (input.length < 3) {
+                    whatsappService.sendMessage(context.from, "Nome invalido. Informe o nome como aparece no cartao:")
+                    return
+                }
+                cardInput.copy(holderName = input.uppercase())
+            }
+            "card_expiry" -> {
+                val cleaned = input.replace(Regex("[^0-9/]"), "")
+                val parts = cleaned.split("/")
+                if (parts.size != 2) {
+                    whatsappService.sendMessage(context.from, "Formato invalido. Use *MM/AA* ou *MM/AAAA*:")
+                    return
+                }
+                val month = parts[0].padStart(2, '0')
+                val year = if (parts[1].length == 2) "20${parts[1]}" else parts[1]
+                if (month.toIntOrNull() !in 1..12) {
+                    whatsappService.sendMessage(context.from, "Mes invalido. Use *MM/AA* ou *MM/AAAA*:")
+                    return
+                }
+                cardInput.copy(expiryMonth = month, expiryYear = year)
+            }
+            "card_cvv" -> {
+                val cvv = input.replace(Regex("[^0-9]"), "")
+                if (cvv.length !in 3..4) {
+                    whatsappService.sendMessage(context.from, "CVV invalido. Informe os *3 ou 4 digitos* do verso do cartao:")
+                    return
+                }
+                cardInput.copy(cvv = cvv)
+            }
+            else -> cardInput
+        }
+
+        paymentSessionManager.updateCardInput(context.from, updated)
+
+        if (updated.isComplete()) {
+            processCardCharge(context, whatsappService, session, updated)
+        } else {
+            promptNextCardField(context, whatsappService, updated)
+        }
+    }
+
+    private fun promptNextCardField(
+        context: CommandContext,
+        whatsappService: WhatsappService,
+        cardInput: PaymentSessionManager.CardInput
+    ) {
+        val prompt = when (cardInput.currentStep()) {
+            "card_holder" -> "Informe o *nome do titular* (como esta no cartao):"
+            "card_expiry" -> "Informe a *validade* (MM/AA):"
+            "card_cvv" -> "Informe o *CVV* (3 ou 4 digitos do verso):"
+            else -> return
+        }
+        whatsappService.sendMessage(context.from, prompt)
+    }
+
+    private fun processCardCharge(
+        context: CommandContext,
+        whatsappService: WhatsappService,
+        session: PaymentSessionManager.PaymentSession,
+        cardInput: PaymentSessionManager.CardInput
+    ) {
+        whatsappService.sendMessage(context.from, "Processando pagamento... Aguarde.")
+
+        val result = paymentService.chargeCard(
+            userPhone = context.from,
+            cardInput = cardInput,
+            amount = session.price,
+            description = "ND Consultas - ${session.tipoLabel}"
+        )
+
+        if (!result.success) {
+            whatsappService.sendMessage(
+                context.from,
+                "*Pagamento recusado*\n\n${result.error ?: "Erro ao processar."}"
+            )
+            whatsappService.sendButtons(
+                to = context.from,
+                body = "O que deseja fazer?",
+                buttons = listOf(
+                    Button(id = "/consultar pgto_cartao", title = "Tentar Novamente"),
+                    Button(id = "/consultar pgto_pix", title = "Pagar com PIX"),
+                    Button(id = "/consultar cancelar_pgto", title = "Cancelar")
+                )
+            )
+            return
+        }
+
+        // Pagamento aprovado
+        val brandText = if (result.brand != null) " ${result.brand}" else ""
+        whatsappService.sendMessage(
+            context.from,
+            "Pagamento aprovado!$brandText ****${result.last4 ?: ""}\n\nProcessando sua consulta..."
+        )
+
+        // Executar consulta automaticamente
+        val info = queryTypeRegistry.getTypeInfo(session.tipo)
+        if (info != null) {
+            paymentSessionManager.consume(context.from)
+            performQuery(context, whatsappService, session.tipo, info, session.query)
+        }
+    }
+
+    // ── Executar a partir de pagamento confirmado (PIX webhook) ────
+
+    private fun executeFromPayment(context: CommandContext, whatsappService: WhatsappService) {
+        val session = paymentSessionManager.getSession(context.from)
+        if (session == null || session.status != PaymentSessionManager.PaymentStatus.PAID) {
+            whatsappService.sendMessage(context.from, "Nenhum pagamento confirmado encontrado.\nUse /consultar para iniciar uma nova consulta.")
+            return
+        }
+
+        val info = queryTypeRegistry.getTypeInfo(session.tipo)
+        if (info == null) {
+            paymentSessionManager.consume(context.from)
+            whatsappService.sendMessage(context.from, "Tipo de consulta invalido. Use /consultar para iniciar uma nova consulta.")
+            return
+        }
+
+        paymentSessionManager.consume(context.from)
+        performQuery(context, whatsappService, session.tipo, info, session.query)
+    }
+
+    // ── Cancelar pagamento pendente ────────────────────────────────
+
+    private fun cancelPayment(context: CommandContext, whatsappService: WhatsappService) {
+        val session = paymentSessionManager.cancel(context.from)
+        if (session != null) {
+            whatsappService.sendMessage(context.from, "Consulta cancelada.")
+        }
+        whatsappService.sendButtons(
+            to = context.from,
+            body = "O que deseja fazer?",
+            buttons = listOf(
+                Button(id = "/consultar", title = "Nova Consulta"),
+                Button(id = "/start", title = "Menu Inicial")
+            )
+        )
+    }
+
+    // ── Core: executar consulta na API ─────────────────────────────
+
+    private fun performQuery(
+        context: CommandContext,
+        whatsappService: WhatsappService,
+        tipo: String,
+        info: QueryTypeRegistry.QueryTypeInfo,
+        query: String
+    ) {
         // Reaction de "processando"
-        try {
-            whatsappService.sendReaction(context.from, context.messageId, "\u23F3")
-        } catch (e: Exception) {
-            log.warn("Falha ao enviar reaction de processamento: {}", e.message)
+        if (context.messageId.isNotBlank()) {
+            try {
+                whatsappService.sendReaction(context.from, context.messageId, "\u23F3")
+            } catch (e: Exception) {
+                log.warn("Falha ao enviar reaction de processamento: {}", e.message)
+            }
         }
 
         whatsappService.sendMessage(
@@ -220,10 +532,12 @@ class ConsultarCommand(
         val result = consultationService.consultar(tipo, query)
 
         // Remover reaction de "processando"
-        try {
-            whatsappService.removeReaction(context.from, context.messageId)
-        } catch (e: Exception) {
-            log.warn("Falha ao remover reaction: {}", e.message)
+        if (context.messageId.isNotBlank()) {
+            try {
+                whatsappService.removeReaction(context.from, context.messageId)
+            } catch (e: Exception) {
+                log.warn("Falha ao remover reaction: {}", e.message)
+            }
         }
 
         // Registrar metricas da consulta
@@ -231,10 +545,12 @@ class ConsultarCommand(
 
         // Erro na consulta
         if (!result.success) {
-            try {
-                whatsappService.sendReaction(context.from, context.messageId, "\u274C")
-            } catch (e: Exception) {
-                log.warn("Falha ao enviar reaction de erro: {}", e.message)
+            if (context.messageId.isNotBlank()) {
+                try {
+                    whatsappService.sendReaction(context.from, context.messageId, "\u274C")
+                } catch (e: Exception) {
+                    log.warn("Falha ao enviar reaction de erro: {}", e.message)
+                }
             }
 
             whatsappService.sendMessage(
@@ -260,10 +576,12 @@ class ConsultarCommand(
         }
 
         // Consulta OK — reagir com check
-        try {
-            whatsappService.sendReaction(context.from, context.messageId, "\u2705")
-        } catch (e: Exception) {
-            log.warn("Falha ao enviar reaction de sucesso: {}", e.message)
+        if (context.messageId.isNotBlank()) {
+            try {
+                whatsappService.sendReaction(context.from, context.messageId, "\u2705")
+            } catch (e: Exception) {
+                log.warn("Falha ao enviar reaction de sucesso: {}", e.message)
+            }
         }
 
         // Tentar gerar PDF e enviar como documento
@@ -291,21 +609,18 @@ class ConsultarCommand(
     private fun trySendPdf(
         context: CommandContext,
         whatsappService: WhatsappService,
-        info: QueryTypeInfo,
+        info: QueryTypeRegistry.QueryTypeInfo,
         tipo: String,
         query: String,
         data: Map<String, Any?>
     ): Boolean {
         return try {
-            // Gerar PDF
             val pdfBytes = pdfService.generate(info.label, query, data)
             val timestamp = LocalDateTime.now().format(FILE_DATE_FMT)
             val filename = "consulta_${tipo}_${timestamp}.pdf"
 
-            // Upload para WhatsApp Media API
             val mediaId = whatsappService.uploadMedia(pdfBytes, "application/pdf", filename)
 
-            // Enviar documento
             whatsappService.sendDocumentById(
                 to = context.from,
                 mediaId = mediaId,
@@ -325,7 +640,7 @@ class ConsultarCommand(
     private fun sendResultAsText(
         context: CommandContext,
         whatsappService: WhatsappService,
-        info: QueryTypeInfo,
+        info: QueryTypeRegistry.QueryTypeInfo,
         query: String,
         data: Map<String, Any?>
     ) {
