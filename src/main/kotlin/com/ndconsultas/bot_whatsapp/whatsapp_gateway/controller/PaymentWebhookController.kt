@@ -20,11 +20,7 @@ class PaymentWebhookController(
         private val log = LoggerFactory.getLogger(PaymentWebhookController::class.java)
 
         private val PAID_STATUSES = setOf(
-            "completed",
-            "confirmed",
-            "approved",
-            "paid",
-            "paid_out"
+            "completed"
         )
     }
 
