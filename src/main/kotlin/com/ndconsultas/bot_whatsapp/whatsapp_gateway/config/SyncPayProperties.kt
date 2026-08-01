@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 
 @ConfigurationProperties(prefix = "syncpay")
 data class SyncPayProperties(
-    val apiUrl: String = "https://api.syncpay.com.br",
+    val apiUrl: String = "https://api.syncpayments.com.br/",
     val clientId: String = "",
     val clientSecret: String = "",
     val webhookUrl: String = ""
