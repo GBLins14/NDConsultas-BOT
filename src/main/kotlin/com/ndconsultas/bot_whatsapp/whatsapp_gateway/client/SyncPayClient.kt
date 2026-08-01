@@ -126,18 +126,27 @@ class SyncPayClient(
 
     // ── Card Token ─────────────────────────────────────────────────
 
-    data class CardTokenRequest(
-        val card_number: String,
+    data class CardData(
+        val number: String,
         val holder_name: String,
-        val expiration_month: String,
-        val expiration_year: String,
-        val security_code: String
+        val expiry_month: String,
+        val expiry_year: String,
+        val cvv: String
+    )
+
+    data class CardTokenRequest(
+        val card: CardData
+    )
+
+    data class CardTokenData(
+        val token: String? = null,
+        val brand: String? = null,
+        val last4: String? = null,
+        val expires_at: String? = null
     )
 
     data class CardTokenResponse(
-        val token: String? = null,
-        val brand: String? = null,
-        val last4: String? = null
+        val data: CardTokenData? = null
     )
 
     fun createCardToken(
@@ -146,27 +155,32 @@ class SyncPayClient(
         expiryMonth: String,
         expiryYear: String,
         cvv: String
-    ): CardTokenResponse {
+    ): CardTokenData {
         log.info("Tokenizando cartão ****{}", cardNumber.takeLast(4))
 
         val request = CardTokenRequest(
-            card_number = cardNumber,
-            holder_name = holderName,
-            expiration_month = expiryMonth,
-            expiration_year = expiryYear,
-            security_code = cvv
+            card = CardData(
+                number = cardNumber,
+                holder_name = holderName,
+                expiry_month = expiryMonth,
+                expiry_year = expiryYear,
+                cvv = cvv
+            )
         )
 
         val token = getToken()
         val response = restClient.post()
-            .uri("/api/partner/v1/card-token")
+            .uri("/api/partner/v1/card-tokens")
             .header("Authorization", "Bearer $token")
             .body(request)
             .retrieve()
             .body(CardTokenResponse::class.java)
 
-        log.info("Cartão tokenizado: brand={}, last4={}", response?.brand, response?.last4)
-        return response ?: throw RuntimeException("Resposta vazia ao tokenizar cartão")
+        val data = response?.data
+            ?: throw RuntimeException("Resposta vazia ao tokenizar cartão")
+
+        log.info("Cartão tokenizado: brand={}, last4={}", data.brand, data.last4)
+        return data
     }
 
     // ── Card Charge ────────────────────────────────────────────────
@@ -213,7 +227,7 @@ class SyncPayClient(
 
         val token = getToken()
         val response = restClient.post()
-            .uri("/api/partner/v1/card-charge")
+            .uri("/api/partner/v1/credit-card")
             .header("Authorization", "Bearer $token")
             .body(request)
             .retrieve()

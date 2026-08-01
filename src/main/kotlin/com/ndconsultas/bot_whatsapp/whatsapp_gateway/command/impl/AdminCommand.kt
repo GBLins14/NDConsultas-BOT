@@ -769,10 +769,9 @@ class AdminCommand(
             return
         }
 
-        val variantsList = result.variants.joinToString("\n") { "  - $it" }
         whatsappService.sendMessage(
             context.from,
-            "*Número banido com sucesso*\n\nVariantes bloqueadas:\n$variantsList"
+            "*Número banido com sucesso*\n\nNúmero bloqueado: *$normalized*"
         )
         sendBackButton(context, whatsappService, "usuarios")
     }
@@ -788,13 +787,14 @@ class AdminCommand(
                 return
             }
 
+            val unique = adminService.getUniqueBannedNumbers()
             adminService.setPendingAction(context.from, "unban")
             whatsappService.sendMessage(
                 context.from,
                 buildString {
                     append("*Desbanir Número*\n\n")
                     append("Números banidos:\n")
-                    banned.forEachIndexed { i, n ->
+                    unique.forEachIndexed { i, n ->
                         append("${i + 1}. $n\n")
                     }
                     append("\nInforme o número que deseja desbanir:")
@@ -810,26 +810,25 @@ class AdminCommand(
             return
         }
 
-        val removed = adminService.unbanNumber(normalized)
-        val variantsList = removed.joinToString("\n") { "  - $it" }
+        adminService.unbanNumber(normalized)
         whatsappService.sendMessage(
             context.from,
-            "*Número desbanido com sucesso*\n\nVariantes desbloqueadas:\n$variantsList"
+            "*Número desbanido com sucesso*\n\nNúmero desbloqueado: *$normalized*"
         )
         sendBackButton(context, whatsappService, "usuarios")
     }
 
     private fun showBanList(context: CommandContext, whatsappService: WhatsappService) {
-        val banned = adminService.getBannedNumbers()
+        val unique = adminService.getUniqueBannedNumbers()
 
-        if (banned.isEmpty()) {
+        if (unique.isEmpty()) {
             whatsappService.sendMessage(context.from, "*Lista de Banidos*\n\nNenhum número banido no momento.")
         } else {
             whatsappService.sendMessage(
                 context.from,
                 buildString {
-                    append("*Lista de Banidos* (${banned.size})\n\n")
-                    banned.forEachIndexed { i, n ->
+                    append("*Lista de Banidos* (${unique.size})\n\n")
+                    unique.forEachIndexed { i, n ->
                         append("${i + 1}. $n\n")
                     }
                 }

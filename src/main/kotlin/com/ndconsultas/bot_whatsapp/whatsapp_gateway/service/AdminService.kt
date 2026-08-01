@@ -78,7 +78,23 @@ class AdminService(
 
     fun getBannedNumbers(): Set<String> = bannedNumbers.toSet()
 
-    fun getBannedCount(): Int = bannedNumbers.size
+    /**
+     * Retorna apenas uma versão por número (deduplica variantes BR).
+     * Usado para exibição ao admin — internamente ambas variantes permanecem banidas.
+     */
+    fun getUniqueBannedNumbers(): Set<String> {
+        val seen = mutableSetOf<String>()
+        val unique = mutableSetOf<String>()
+        for (number in bannedNumbers) {
+            if (number !in seen) {
+                unique.add(number)
+                seen.addAll(brVariants(number))
+            }
+        }
+        return unique
+    }
+
+    fun getBannedCount(): Int = getUniqueBannedNumbers().size
 
     /** Chamado apenas pelo ConfigPersistenceService no startup — não dispara save. */
     fun loadBannedNumber(phone: String) {
