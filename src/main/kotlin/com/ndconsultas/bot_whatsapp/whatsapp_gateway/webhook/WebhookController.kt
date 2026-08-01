@@ -31,7 +31,7 @@ class WebhookController(
         return ResponseEntity.status(403).build()
     }
 
-    @PostMapping("/syncpay")
+    @PostMapping
     fun receive(@RequestBody payload: WebhookPayload): ResponseEntity<Void> {
         log.debug("Webhook received — {} entries", payload.entry.size)
         webhookProcessor.process(payload)
