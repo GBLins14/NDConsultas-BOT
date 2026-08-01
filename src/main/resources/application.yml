@@ -24,7 +24,7 @@ admin:
   phone-number: ${ADMIN_PHONE_NUMBER}
 
 syncpay:
-  api-url: ${SYNCPAY_API_URL:https://api.syncpay.com.br}
+  api-url: ${SYNCPAY_API_URL:https://api.syncpayments.com.br}
   client-id: ${SYNCPAY_CLIENT_ID}
   client-secret: ${SYNCPAY_CLIENT_SECRET}
   webhook-url: ${SYNCPAY_WEBHOOK_URL}
