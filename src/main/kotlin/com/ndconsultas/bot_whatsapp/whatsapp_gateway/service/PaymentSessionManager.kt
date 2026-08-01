@@ -53,7 +53,7 @@ class PaymentSessionManager {
             createdAt = Instant.now()
         )
         sessions[userPhone] = session
-        log.info("Sessão de pagamento criada: {} - {} R${}", userPhone, tipo, "%.2f".format(price))
+        log.info("Sessão de pagamento criada: {} - {} R\${}", userPhone, tipo, "%.2f".format(price))
         return session
     }
 

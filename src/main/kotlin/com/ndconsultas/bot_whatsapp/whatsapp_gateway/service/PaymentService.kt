@@ -75,7 +75,7 @@ class PaymentService(
         paymentSessionManager.markPaid(session.userPhone, transactionId)
         paymentStats.record(session.userPhone, session.tipo, session.tipoLabel, session.price, transactionId)
 
-        log.info("PIX confirmado: {} - {} R${}", session.userPhone, session.tipo, "%.2f".format(session.price))
+        log.info("PIX confirmado: {} - {} R\${}", session.userPhone, session.tipo, "%.2f".format(session.price))
         return paymentSessionManager.getSession(session.userPhone)
     }
 }
