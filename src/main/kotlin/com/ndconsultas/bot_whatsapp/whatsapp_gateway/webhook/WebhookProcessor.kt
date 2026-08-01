@@ -105,8 +105,15 @@ class WebhookProcessor(
                     return@forEach
                 }
 
-                // 4. Pagamento PIX pendente: lembrar o usuário
+                // 4. Coleta de cartão: rotear texto como input de cartão
                 val paymentSession = paymentSessionManager.getSession(message.from)
+                if (paymentSession != null && paymentSession.status == PaymentSessionManager.PaymentStatus.COLLECTING_CARD) {
+                    val cardCtx = ctx.copy(rawMessage = "/consultar cartao_input ${incoming.text}")
+                    commandProcessor.process(cardCtx)
+                    return@forEach
+                }
+
+                // 5. Pagamento PIX pendente: lembrar o usuário
                 if (paymentSession != null && paymentSession.status == PaymentSessionManager.PaymentStatus.AWAITING_PAYMENT) {
                     whatsappService.sendMessage(
                         message.from,

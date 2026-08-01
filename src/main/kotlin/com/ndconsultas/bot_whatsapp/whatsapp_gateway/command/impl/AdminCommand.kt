@@ -233,7 +233,7 @@ class AdminCommand(
                 append("Configure quanto cobrar por cada consulta.\n\n")
                 append("*Como funciona:*\n")
                 append("- Valor *R\$ 0* = consulta gratuita\n")
-                append("- Valor maior que zero = cliente paga via PIX antes de consultar\n")
+                append("- Valor maior que zero = cliente paga via PIX ou cartão antes de consultar\n")
                 append("- Você (admin) sempre consulta de graça\n\n")
                 append("_Use 'Preço Padrão' para definir o mesmo valor para todos os módulos de uma vez._")
             }
@@ -890,6 +890,7 @@ class AdminCommand(
                 pending.forEach { (phone, session) ->
                     val method = when (session.status) {
                         PaymentSessionManager.PaymentStatus.AWAITING_PAYMENT -> "PIX gerado"
+                        PaymentSessionManager.PaymentStatus.COLLECTING_CARD -> "Cartão (coletando dados)"
                         else -> "Aguardando escolha"
                     }
                     append("*$phone*\n")

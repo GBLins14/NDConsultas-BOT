@@ -18,8 +18,28 @@ class PaymentSessionManager {
     enum class PaymentStatus {
         AWAITING_METHOD,
         AWAITING_PAYMENT,
+        COLLECTING_CARD,
         PAID,
         CANCELLED
+    }
+
+    data class CardInput(
+        val number: String? = null,
+        val holderName: String? = null,
+        val expiryMonth: String? = null,
+        val expiryYear: String? = null,
+        val cvv: String? = null
+    ) {
+        fun currentStep(): String = when {
+            number == null -> "card_number"
+            holderName == null -> "card_holder"
+            expiryMonth == null -> "card_expiry"
+            cvv == null -> "card_cvv"
+            else -> "complete"
+        }
+
+        fun isComplete(): Boolean =
+            number != null && holderName != null && expiryMonth != null && expiryYear != null && cvv != null
     }
 
     data class PaymentSession(
@@ -32,7 +52,8 @@ class PaymentSessionManager {
         val createdAt: Instant,
         val paymentId: String? = null,
         val pixCode: String? = null,
-        val pixIdentifier: String? = null
+        val pixIdentifier: String? = null,
+        val cardInput: CardInput? = null
     ) {
         fun isExpired(): Boolean =
             status != PaymentStatus.PAID &&
@@ -67,6 +88,8 @@ class PaymentSessionManager {
         return session
     }
 
+    // ── PIX ─────────────────────────────────────────────────────────
+
     fun setMethodPix(userPhone: String, pixCode: String, pixIdentifier: String): PaymentSession? {
         val session = sessions[userPhone] ?: return null
         val updated = session.copy(
@@ -78,6 +101,28 @@ class PaymentSessionManager {
         log.info("PIX gerado para {}: identifier={}", userPhone, pixIdentifier)
         return updated
     }
+
+    // ── Cartão ──────────────────────────────────────────────────────
+
+    fun setMethodCard(userPhone: String): PaymentSession? {
+        val session = sessions[userPhone] ?: return null
+        val updated = session.copy(
+            status = PaymentStatus.COLLECTING_CARD,
+            cardInput = CardInput()
+        )
+        sessions[userPhone] = updated
+        log.info("Coleta de cartão iniciada para {}", userPhone)
+        return updated
+    }
+
+    fun updateCardInput(userPhone: String, cardInput: CardInput): PaymentSession? {
+        val session = sessions[userPhone] ?: return null
+        val updated = session.copy(cardInput = cardInput)
+        sessions[userPhone] = updated
+        return updated
+    }
+
+    // ── Comum ───────────────────────────────────────────────────────
 
     fun markPaid(userPhone: String, paymentId: String): PaymentSession? {
         val session = sessions[userPhone] ?: return null
@@ -104,7 +149,11 @@ class PaymentSessionManager {
     fun getPendingSessions(): Map<String, PaymentSession> {
         sessions.entries.removeIf { it.value.isExpired() }
         return sessions.filter {
-            it.value.status in listOf(PaymentStatus.AWAITING_METHOD, PaymentStatus.AWAITING_PAYMENT)
+            it.value.status in listOf(
+                PaymentStatus.AWAITING_METHOD,
+                PaymentStatus.AWAITING_PAYMENT,
+                PaymentStatus.COLLECTING_CARD
+            )
         }
     }
 
