@@ -52,6 +52,12 @@ class PaymentService(
 
             paymentSessionManager.setMethodPix(userPhone, response.pix_code, response.identifier)
 
+            log.info(
+                "PIX criado -> identifier={}, pixCode={}",
+                response.identifier,
+                response.pix_code
+            )
+
             PixResult(
                 success = true,
                 pixCode = response.pix_code,
