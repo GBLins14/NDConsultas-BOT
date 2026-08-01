@@ -18,30 +18,8 @@ class PaymentSessionManager {
     enum class PaymentStatus {
         AWAITING_METHOD,
         AWAITING_PAYMENT,
-        COLLECTING_CARD,
-        PROCESSING,
         PAID,
-        FAILED,
         CANCELLED
-    }
-
-    data class CardInput(
-        val number: String? = null,
-        val holderName: String? = null,
-        val expiryMonth: String? = null,
-        val expiryYear: String? = null,
-        val cvv: String? = null
-    ) {
-        fun currentStep(): String = when {
-            number == null -> "card_number"
-            holderName == null -> "card_holder"
-            expiryMonth == null -> "card_expiry"
-            cvv == null -> "card_cvv"
-            else -> "complete"
-        }
-
-        fun isComplete(): Boolean =
-            number != null && holderName != null && expiryMonth != null && expiryYear != null && cvv != null
     }
 
     data class PaymentSession(
@@ -52,11 +30,9 @@ class PaymentSessionManager {
         val price: BigDecimal,
         val status: PaymentStatus,
         val createdAt: Instant,
-        val paymentMethod: String? = null,
         val paymentId: String? = null,
         val pixCode: String? = null,
-        val pixIdentifier: String? = null,
-        val cardInput: CardInput? = null
+        val pixIdentifier: String? = null
     ) {
         fun isExpired(): Boolean =
             status != PaymentStatus.PAID &&
@@ -77,7 +53,7 @@ class PaymentSessionManager {
             createdAt = Instant.now()
         )
         sessions[userPhone] = session
-        log.info("Sessao de pagamento criada: {} - {} R$ {}", userPhone, tipo, "%.2f".format(price))
+        log.info("Sessão de pagamento criada: {} - {} R${}", userPhone, tipo, "%.2f".format(price))
         return session
     }
 
@@ -85,7 +61,7 @@ class PaymentSessionManager {
         val session = sessions[userPhone] ?: return null
         if (session.isExpired()) {
             sessions.remove(userPhone)
-            log.info("Sessao de pagamento expirada: {}", userPhone)
+            log.info("Sessão de pagamento expirada: {}", userPhone)
             return null
         }
         return session
@@ -95,38 +71,11 @@ class PaymentSessionManager {
         val session = sessions[userPhone] ?: return null
         val updated = session.copy(
             status = PaymentStatus.AWAITING_PAYMENT,
-            paymentMethod = "pix",
             pixCode = pixCode,
             pixIdentifier = pixIdentifier
         )
         sessions[userPhone] = updated
         log.info("PIX gerado para {}: identifier={}", userPhone, pixIdentifier)
-        return updated
-    }
-
-    fun setMethodCard(userPhone: String): PaymentSession? {
-        val session = sessions[userPhone] ?: return null
-        val updated = session.copy(
-            status = PaymentStatus.COLLECTING_CARD,
-            paymentMethod = "card",
-            cardInput = CardInput()
-        )
-        sessions[userPhone] = updated
-        log.info("Coleta de cartao iniciada para {}", userPhone)
-        return updated
-    }
-
-    fun updateCardInput(userPhone: String, cardInput: CardInput): PaymentSession? {
-        val session = sessions[userPhone] ?: return null
-        val updated = session.copy(cardInput = cardInput)
-        sessions[userPhone] = updated
-        return updated
-    }
-
-    fun markProcessing(userPhone: String): PaymentSession? {
-        val session = sessions[userPhone] ?: return null
-        val updated = session.copy(status = PaymentStatus.PROCESSING)
-        sessions[userPhone] = updated
         return updated
     }
 
@@ -136,14 +85,6 @@ class PaymentSessionManager {
         sessions[userPhone] = paid
         log.info("Pagamento confirmado: {} - {} (ID: {})", userPhone, session.tipo, paymentId)
         return paid
-    }
-
-    fun markFailed(userPhone: String): PaymentSession? {
-        val session = sessions[userPhone] ?: return null
-        val updated = session.copy(status = PaymentStatus.FAILED)
-        sessions[userPhone] = updated
-        log.info("Pagamento falhou: {} - {}", userPhone, session.tipo)
-        return updated
     }
 
     fun consume(userPhone: String): PaymentSession? {
@@ -163,11 +104,7 @@ class PaymentSessionManager {
     fun getPendingSessions(): Map<String, PaymentSession> {
         sessions.entries.removeIf { it.value.isExpired() }
         return sessions.filter {
-            it.value.status in listOf(
-                PaymentStatus.AWAITING_METHOD,
-                PaymentStatus.AWAITING_PAYMENT,
-                PaymentStatus.COLLECTING_CARD
-            )
+            it.value.status in listOf(PaymentStatus.AWAITING_METHOD, PaymentStatus.AWAITING_PAYMENT)
         }
     }
 

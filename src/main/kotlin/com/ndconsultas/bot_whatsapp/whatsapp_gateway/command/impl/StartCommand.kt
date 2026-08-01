@@ -17,12 +17,12 @@ class StartCommand : BotCommand {
         whatsappService.sendMessage(
             context.from,
             buildString {
-                appendLine("*Ola, ${context.senderName}!*")
+                appendLine("*Olá, ${context.senderName}!*")
                 appendLine()
                 appendLine("Bem-vindo ao *ND Consultas Veiculares*!")
-                appendLine("Sou seu assistente virtual para consultas de veiculos.")
+                appendLine("Sou seu assistente virtual para consultas de veículos.")
                 appendLine()
-                appendLine("Escolha uma opcao abaixo para comecar.")
+                appendLine("Escolha uma opção abaixo para começar.")
             }
         )
 
@@ -30,7 +30,7 @@ class StartCommand : BotCommand {
             to = context.from,
             body = "O que deseja fazer?",
             buttons = listOf(
-                Button(id = "/consultar", title = "Consultar Veiculo"),
+                Button(id = "/consultar", title = "Consultar Veículo"),
                 Button(id = "/help", title = "Ajuda")
             ),
             footer = "ND Consultas | v1.0"

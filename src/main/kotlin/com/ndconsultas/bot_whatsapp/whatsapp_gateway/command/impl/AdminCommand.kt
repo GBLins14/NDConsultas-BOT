@@ -66,7 +66,7 @@ class AdminCommand(
             "unblock" -> handleUnblock(context, whatsappService)
             "status" -> showFullStatus(context, whatsappService)
             "reset" -> handleReset(context, whatsappService)
-            else -> whatsappService.sendMessage(context.from, "Acao admin invalida.")
+            else -> whatsappService.sendMessage(context.from, "Ação admin inválida.")
         }
     }
 
@@ -97,9 +97,9 @@ class AdminCommand(
                 append("Status: *$botStatus*\n")
                 append("Uptime: ${s["uptime"]}\n\n")
 
-                append("*Modulos*\n")
+                append("*Módulos*\n")
                 append("Ativos: *$enabledCount/$totalTypes*\n")
-                append("Com preco: $pricedCount/$totalTypes\n\n")
+                append("Com preço: $pricedCount/$totalTypes\n\n")
 
                 append("*Consultas*\n")
                 append("Total realizadas: *$total*\n\n")
@@ -108,7 +108,7 @@ class AdminCommand(
                 append("Receita: *R\$ ${"%.2f".format(revenue)}*\n")
                 append("Pgtos pendentes: *$pending*\n\n")
 
-                append("*Usuarios*\n")
+                append("*Usuários*\n")
                 append("Banidos: *$banned*\n")
                 append("Msgs: ${s["messagesSent"]} env / ${s["messagesReceived"]} rec")
             }
@@ -126,28 +126,28 @@ class AdminCommand(
                     rows = listOf(
                         ListRow(
                             "/admin cat modulos",
-                            "Modulos de Consulta",
+                            "Módulos de Consulta",
                             "Ativar, desativar e ver detalhes"
                         ),
                         ListRow(
                             "/admin cat precos",
-                            "Precos e Valores",
+                            "Preços e Valores",
                             "Definir quanto cobrar por consulta"
                         ),
                         ListRow(
                             "/admin cat financeiro",
                             "Financeiro",
-                            "Receita, pagamentos e liberacoes"
+                            "Receita, pagamentos e liberações"
                         ),
                         ListRow(
                             "/admin cat usuarios",
-                            "Gerenciar Usuarios",
+                            "Gerenciar Usuários",
                             "Banir, desbanir e lista de bloqueados"
                         ),
                         ListRow(
                             "/admin cat relatorios",
-                            "Relatorios",
-                            "Estatisticas, ranking e historico"
+                            "Relatórios",
+                            "Estatísticas, ranking e histórico"
                         ),
                         ListRow(
                             "/admin cat controle",
@@ -184,40 +184,40 @@ class AdminCommand(
         whatsappService.sendMessage(
             context.from,
             buildString {
-                append("*Modulos de Consulta*\n\n")
-                append("Aqui voce gerencia quais tipos de consulta estao disponiveis para os clientes.\n\n")
+                append("*Módulos de Consulta*\n\n")
+                append("Aqui você gerencia quais tipos de consulta estão disponíveis para os clientes.\n\n")
                 append("*Resumo:*\n")
-                append("Total de modulos: *$totalTypes*\n")
-                append("Ativos (visiveis): *$enabledCount*\n")
+                append("Total de módulos: *$totalTypes*\n")
+                append("Ativos (visíveis): *$enabledCount*\n")
                 append("Inativos (ocultos): *$disabledCount*\n\n")
-                append("_Modulos inativos nao aparecem para os clientes e nao podem ser consultados._")
+                append("_Módulos inativos não aparecem para os clientes e não podem ser consultados._")
             }
         )
 
         whatsappService.sendList(
             to = context.from,
-            header = "Modulos",
-            body = "Selecione uma acao:",
-            buttonLabel = "Acoes",
+            header = "Módulos",
+            body = "Selecione uma ação:",
+            buttonLabel = "Ações",
             footer = "ND Consultas | Admin",
             sections = listOf(
                 ListSection(
-                    title = "Gerenciar Modulos",
+                    title = "Gerenciar Módulos",
                     rows = listOf(
                         ListRow(
                             "/admin modulos",
-                            "Ver Todos os Modulos",
-                            "Lista completa com status e descricao"
+                            "Ver Todos os Módulos",
+                            "Lista completa com status e descrição"
                         ),
                         ListRow(
                             "/admin ativar",
-                            "Ativar Modulo",
-                            "Tornar um modulo disponivel"
+                            "Ativar Módulo",
+                            "Tornar um módulo disponível"
                         ),
                         ListRow(
                             "/admin desativar",
-                            "Desativar Modulo",
-                            "Ocultar um modulo dos clientes"
+                            "Desativar Módulo",
+                            "Ocultar um módulo dos clientes"
                         )
                     )
                 )
@@ -229,39 +229,39 @@ class AdminCommand(
         whatsappService.sendMessage(
             context.from,
             buildString {
-                append("*Precos e Valores*\n\n")
+                append("*Preços e Valores*\n\n")
                 append("Configure quanto cobrar por cada consulta.\n\n")
                 append("*Como funciona:*\n")
                 append("- Valor *R\$ 0* = consulta gratuita\n")
-                append("- Valor maior que zero = cliente paga via PIX ou cartao antes de consultar\n")
-                append("- Voce (admin) sempre consulta de graca\n\n")
-                append("_Use 'Preco Padrao' para definir o mesmo valor para todos os modulos de uma vez._")
+                append("- Valor maior que zero = cliente paga via PIX antes de consultar\n")
+                append("- Você (admin) sempre consulta de graça\n\n")
+                append("_Use 'Preço Padrão' para definir o mesmo valor para todos os módulos de uma vez._")
             }
         )
 
         whatsappService.sendList(
             to = context.from,
-            header = "Precos",
-            body = "Selecione uma acao:",
-            buttonLabel = "Acoes",
+            header = "Preços",
+            body = "Selecione uma ação:",
+            buttonLabel = "Ações",
             footer = "ND Consultas | Admin",
             sections = listOf(
                 ListSection(
-                    title = "Gerenciar Precos",
+                    title = "Gerenciar Preços",
                     rows = listOf(
                         ListRow(
                             "/admin precos",
-                            "Ver Precos Atuais",
-                            "Lista de precos de todos os modulos"
+                            "Ver Preços Atuais",
+                            "Lista de preços de todos os módulos"
                         ),
                         ListRow(
                             "/admin preco",
-                            "Alterar Preco",
-                            "Mudar valor de um modulo especifico"
+                            "Alterar Preço",
+                            "Mudar valor de um módulo específico"
                         ),
                         ListRow(
                             "/admin preco_padrao",
-                            "Preco Padrao",
+                            "Preço Padrão",
                             "Definir mesmo valor para todos"
                         )
                     )
@@ -277,16 +277,16 @@ class AdminCommand(
                 append("*Financeiro*\n\n")
                 append("Acompanhe a receita do bot e gerencie pagamentos.\n\n")
                 append("*Faturamento* — Receita total, custos de API e lucro\n")
-                append("*Pendentes* — Clientes aguardando confirmacao de pagamento\n")
-                append("*Liberar* — Aprovar um pagamento manualmente (ex: cliente pagou mas webhook nao chegou)")
+                append("*Pendentes* — Clientes aguardando confirmação de pagamento\n")
+                append("*Liberar* — Aprovar um pagamento manualmente (ex: cliente pagou mas webhook não chegou)")
             }
         )
 
         whatsappService.sendList(
             to = context.from,
             header = "Financeiro",
-            body = "Selecione uma acao:",
-            buttonLabel = "Acoes",
+            body = "Selecione uma ação:",
+            buttonLabel = "Ações",
             footer = "ND Consultas | Admin",
             sections = listOf(
                 ListSection(
@@ -317,27 +317,27 @@ class AdminCommand(
         whatsappService.sendMessage(
             context.from,
             buildString {
-                append("*Gerenciar Usuarios*\n\n")
-                append("Controle o acesso dos usuarios ao bot.\n\n")
-                append("*Banir* — Bloqueia todas as variantes do numero (com e sem o 9)\n")
-                append("*Desbanir* — Restaura o acesso do numero\n")
-                append("*Lista* — Veja todos os numeros bloqueados")
+                append("*Gerenciar Usuários*\n\n")
+                append("Controle o acesso dos usuários ao bot.\n\n")
+                append("*Banir* — Bloqueia todas as variantes do número (com e sem o 9)\n")
+                append("*Desbanir* — Restaura o acesso do número\n")
+                append("*Lista* — Veja todos os números bloqueados")
             }
         )
 
         whatsappService.sendList(
             to = context.from,
-            header = "Usuarios",
-            body = "Selecione uma acao:",
-            buttonLabel = "Acoes",
+            header = "Usuários",
+            body = "Selecione uma ação:",
+            buttonLabel = "Ações",
             footer = "ND Consultas | Admin",
             sections = listOf(
                 ListSection(
-                    title = "Usuarios",
+                    title = "Usuários",
                     rows = listOf(
-                        ListRow("/admin ban", "Banir Numero", "Bloquear acesso de um numero"),
-                        ListRow("/admin unban", "Desbanir Numero", "Restaurar acesso"),
-                        ListRow("/admin banlist", "Lista de Banidos", "Ver numeros bloqueados")
+                        ListRow("/admin ban", "Banir Número", "Bloquear acesso de um número"),
+                        ListRow("/admin unban", "Desbanir Número", "Restaurar acesso"),
+                        ListRow("/admin banlist", "Lista de Banidos", "Ver números bloqueados")
                     )
                 )
             )
@@ -348,27 +348,27 @@ class AdminCommand(
         whatsappService.sendMessage(
             context.from,
             buildString {
-                append("*Relatorios*\n\n")
-                append("Veja estatisticas detalhadas do uso do bot.\n\n")
-                append("*Estatisticas* — Total de consultas, taxa de sucesso e custos\n")
-                append("*Top Modulos* — Ranking dos modulos mais consultados\n")
-                append("*Historico* — Ultimas consultas realizadas com detalhes")
+                append("*Relatórios*\n\n")
+                append("Veja estatísticas detalhadas do uso do bot.\n\n")
+                append("*Estatísticas* — Total de consultas, taxa de sucesso e custos\n")
+                append("*Top Módulos* — Ranking dos módulos mais consultados\n")
+                append("*Histórico* — Últimas consultas realizadas com detalhes")
             }
         )
 
         whatsappService.sendList(
             to = context.from,
-            header = "Relatorios",
-            body = "Selecione uma acao:",
-            buttonLabel = "Acoes",
+            header = "Relatórios",
+            body = "Selecione uma ação:",
+            buttonLabel = "Ações",
             footer = "ND Consultas | Admin",
             sections = listOf(
                 ListSection(
-                    title = "Relatorios",
+                    title = "Relatórios",
                     rows = listOf(
-                        ListRow("/admin stats", "Estatisticas", "Consultas, taxas e custos internos"),
-                        ListRow("/admin top", "Top Modulos", "Ranking dos mais consultados"),
-                        ListRow("/admin historico", "Historico Recente", "Ultimas consultas realizadas")
+                        ListRow("/admin stats", "Estatísticas", "Consultas, taxas e custos internos"),
+                        ListRow("/admin top", "Top Módulos", "Ranking dos mais consultados"),
+                        ListRow("/admin historico", "Histórico Recente", "Últimas consultas realizadas")
                     )
                 )
             )
@@ -381,18 +381,18 @@ class AdminCommand(
             buildString {
                 append("*Controle do Bot*\n\n")
                 append("Gerencie o funcionamento geral do bot.\n\n")
-                append("*Bloquear* — Impede TODOS os clientes de fazer consultas (voce continua consultando)\n")
+                append("*Bloquear* — Impede TODOS os clientes de fazer consultas (você continua consultando)\n")
                 append("*Liberar* — Reativa as consultas para todos\n")
-                append("*Status* — Relatorio completo de todas as metricas\n")
-                append("*Reset* — Zera contadores de estatisticas e pagamentos (precos e bans nao sao afetados)")
+                append("*Status* — Relatório completo de todas as métricas\n")
+                append("*Reset* — Zera contadores de estatísticas e pagamentos (preços e bans não são afetados)")
             }
         )
 
         whatsappService.sendList(
             to = context.from,
             header = "Controle",
-            body = "Selecione uma acao:",
-            buttonLabel = "Acoes",
+            body = "Selecione uma ação:",
+            buttonLabel = "Ações",
             footer = "ND Consultas | Admin",
             sections = listOf(
                 ListSection(
@@ -400,8 +400,8 @@ class AdminCommand(
                     rows = listOf(
                         ListRow("/admin block", "Bloquear Consultas", "Impedir novas consultas"),
                         ListRow("/admin unblock", "Liberar Consultas", "Reativar consultas"),
-                        ListRow("/admin status", "Status Completo", "Todas as metricas do bot"),
-                        ListRow("/admin reset", "Resetar Contadores", "Zerar estatisticas")
+                        ListRow("/admin status", "Status Completo", "Todas as métricas do bot"),
+                        ListRow("/admin reset", "Resetar Contadores", "Zerar estatísticas")
                     )
                 )
             )
@@ -416,7 +416,7 @@ class AdminCommand(
         whatsappService.sendMessage(
             context.from,
             buildString {
-                append("*Todos os Modulos de Consulta*\n\n")
+                append("*Todos os Módulos de Consulta*\n\n")
 
                 queryTypeRegistry.categories.forEach { (catKey, cat) ->
                     append("*${cat.label}*\n")
@@ -425,14 +425,14 @@ class AdminCommand(
                         val enabled = pricingService.isModuleEnabled(tipo)
                         val statusIcon = if (enabled) "ON" else "OFF"
                         val price = pricingService.getPrice(tipo)
-                        val priceText = if (price > BigDecimal.ZERO) "R\$ ${"%.2f".format(price)}" else "Gratis"
+                        val priceText = if (price > BigDecimal.ZERO) "R\$ ${"%.2f".format(price)}" else "Grátis"
                         append("  [$statusIcon] *${info.label}* — $priceText\n")
                         append("    _${info.description.take(80)}..._\n")
                     }
                     append("\n")
                 }
 
-                append("_Para ver detalhes de um modulo, use: /admin modulo <codigo>_\n")
+                append("_Para ver detalhes de um módulo, use: /admin modulo <codigo>_\n")
                 append("_Ex: /admin modulo placa_full_")
             }
         )
@@ -448,9 +448,9 @@ class AdminCommand(
             whatsappService.sendMessage(
                 context.from,
                 buildString {
-                    append("*Detalhes do Modulo*\n\n")
-                    append("Informe o *codigo* do modulo para ver os detalhes completos.\n\n")
-                    append("*Codigos disponiveis:*\n")
+                    append("*Detalhes do Módulo*\n\n")
+                    append("Informe o *código* do módulo para ver os detalhes completos.\n\n")
+                    append("*Códigos disponíveis:*\n")
                     queryTypeRegistry.categories.forEach { (catKey, cat) ->
                         append("\n_${cat.label}_\n")
                         queryTypeRegistry.getTypesForCategory(catKey).forEach { (code, info) ->
@@ -464,7 +464,7 @@ class AdminCommand(
 
         val info = queryTypeRegistry.getTypeInfo(tipo)
         if (info == null) {
-            whatsappService.sendMessage(context.from, "Modulo *$tipo* nao encontrado.")
+            whatsappService.sendMessage(context.from, "Módulo *$tipo* não encontrado.")
             sendBackButton(context, whatsappService, "modulos")
             return
         }
@@ -477,10 +477,10 @@ class AdminCommand(
             context.from,
             buildString {
                 append("*${info.label}*\n")
-                append("Codigo: `$tipo`\n")
+                append("Código: `$tipo`\n")
                 append("Categoria: ${catInfo?.label ?: info.category}\n")
                 append("Status: *${if (enabled) "Ativo" else "Inativo"}*\n")
-                append("Preco: *${if (price > BigDecimal.ZERO) "R\$ ${"%.2f".format(price)}" else "Gratis"}*\n\n")
+                append("Preço: *${if (price > BigDecimal.ZERO) "R\$ ${"%.2f".format(price)}" else "Grátis"}*\n\n")
                 append("*O que faz:*\n")
                 append(info.description)
                 append("\n\n*Dado solicitado ao cliente:*\n")
@@ -494,14 +494,14 @@ class AdminCommand(
         } else {
             buttons.add(Button(id = "/admin ativar $tipo", title = "Ativar"))
         }
-        buttons.add(Button(id = "/admin preco $tipo", title = "Alterar Preco"))
+        buttons.add(Button(id = "/admin preco $tipo", title = "Alterar Preço"))
         if (buttons.size < 3) {
             buttons.add(Button(id = "/admin cat modulos", title = "Voltar"))
         }
 
         whatsappService.sendButtons(
             to = context.from,
-            body = "Acoes para ${info.label}:",
+            body = "Ações para ${info.label}:",
             buttons = buttons
         )
     }
@@ -512,7 +512,7 @@ class AdminCommand(
         if (tipo == null) {
             val disabled = pricingService.getDisabledModules()
             if (disabled.isEmpty()) {
-                whatsappService.sendMessage(context.from, "Todos os modulos ja estao ativos.")
+                whatsappService.sendMessage(context.from, "Todos os módulos já estão ativos.")
                 sendBackButton(context, whatsappService, "modulos")
                 return
             }
@@ -521,13 +521,13 @@ class AdminCommand(
             whatsappService.sendMessage(
                 context.from,
                 buildString {
-                    append("*Ativar Modulo*\n\n")
-                    append("Modulos inativos:\n")
+                    append("*Ativar Módulo*\n\n")
+                    append("Módulos inativos:\n")
                     disabled.forEach { code ->
                         val label = queryTypeRegistry.getTypeLabel(code)
                         append("  `$code` — $label\n")
                     }
-                    append("\nInforme o codigo do modulo para ativar:")
+                    append("\nInforme o código do módulo para ativar:")
                 }
             )
             return
@@ -535,7 +535,7 @@ class AdminCommand(
 
         val info = queryTypeRegistry.getTypeInfo(tipo)
         if (info == null) {
-            whatsappService.sendMessage(context.from, "Modulo *$tipo* nao encontrado.")
+            whatsappService.sendMessage(context.from, "Módulo *$tipo* não encontrado.")
             sendBackButton(context, whatsappService, "modulos")
             return
         }
@@ -543,7 +543,7 @@ class AdminCommand(
         pricingService.enableModule(tipo)
         whatsappService.sendMessage(
             context.from,
-            "Modulo *${info.label}* ativado com sucesso.\nAgora os clientes podem utiliza-lo."
+            "Módulo *${info.label}* ativado com sucesso.\nAgora os clientes podem utilizá-lo."
         )
         sendBackButton(context, whatsappService, "modulos")
     }
@@ -556,14 +556,14 @@ class AdminCommand(
             whatsappService.sendMessage(
                 context.from,
                 buildString {
-                    append("*Desativar Modulo*\n\n")
-                    append("Modulos ativos:\n")
+                    append("*Desativar Módulo*\n\n")
+                    append("Módulos ativos:\n")
                     queryTypeRegistry.types.forEach { (code, info) ->
                         if (pricingService.isModuleEnabled(code)) {
                             append("  `$code` — ${info.label}\n")
                         }
                     }
-                    append("\nInforme o codigo do modulo para desativar:")
+                    append("\nInforme o código do módulo para desativar:")
                 }
             )
             return
@@ -571,7 +571,7 @@ class AdminCommand(
 
         val info = queryTypeRegistry.getTypeInfo(tipo)
         if (info == null) {
-            whatsappService.sendMessage(context.from, "Modulo *$tipo* nao encontrado.")
+            whatsappService.sendMessage(context.from, "Módulo *$tipo* não encontrado.")
             sendBackButton(context, whatsappService, "modulos")
             return
         }
@@ -579,7 +579,7 @@ class AdminCommand(
         pricingService.disableModule(tipo)
         whatsappService.sendMessage(
             context.from,
-            "Modulo *${info.label}* desativado.\nOs clientes nao verao mais este modulo ate voce reativa-lo."
+            "Módulo *${info.label}* desativado.\nOs clientes não verão mais este módulo até você reativá-lo."
         )
         sendBackButton(context, whatsappService, "modulos")
     }
@@ -594,7 +594,7 @@ class AdminCommand(
         whatsappService.sendMessage(
             context.from,
             buildString {
-                append("*Precos das Consultas*\n\n")
+                append("*Preços das Consultas*\n\n")
 
                 queryTypeRegistry.categories.forEach { (catKey, cat) ->
                     append("*${cat.label}*\n")
@@ -606,16 +606,16 @@ class AdminCommand(
                         val priceText = if (price != null && price > BigDecimal.ZERO) {
                             "R\$ ${"%.2f".format(price)}"
                         } else if (price != null) {
-                            "Gratis"
+                            "Grátis"
                         } else {
-                            "_Nao definido_"
+                            "_Não definido_"
                         }
                         append("  ${info.label}$statusTag: $priceText\n")
                     }
                     append("\n")
                 }
 
-                append("_Voce (admin) sempre consulta de graca, independente do preco._")
+                append("_Você (admin) sempre consulta de graça, independente do preço._")
             }
         )
 
@@ -630,17 +630,17 @@ class AdminCommand(
             whatsappService.sendMessage(
                 context.from,
                 buildString {
-                    append("*Alterar Preco*\n\n")
-                    append("Informe o *codigo* do modulo e o *valor*.\n")
+                    append("*Alterar Preço*\n\n")
+                    append("Informe o *código* do módulo e o *valor*.\n")
                     append("Formato: `codigo valor`\n")
                     append("Ex: `placa_full 25.00`\n")
-                    append("Use `0` para tornar gratis.\n\n")
-                    append("*Codigos disponiveis:*\n")
+                    append("Use `0` para tornar grátis.\n\n")
+                    append("*Códigos disponíveis:*\n")
                     queryTypeRegistry.categories.forEach { (catKey, cat) ->
                         append("\n_${cat.label}_\n")
                         queryTypeRegistry.getTypesForCategory(catKey).forEach { (code, info) ->
                             val current = pricingService.getPrice(code)
-                            val priceText = if (current > BigDecimal.ZERO) "R\$ ${"%.2f".format(current)}" else "Gratis"
+                            val priceText = if (current > BigDecimal.ZERO) "R\$ ${"%.2f".format(current)}" else "Grátis"
                             append("  `$code` ($priceText)\n")
                         }
                     }
@@ -654,7 +654,7 @@ class AdminCommand(
         if (valor == null) {
             val info = queryTypeRegistry.getTypeInfo(tipo)
             if (info == null) {
-                whatsappService.sendMessage(context.from, "Modulo *$tipo* nao encontrado.\nVerifique o codigo e tente novamente.")
+                whatsappService.sendMessage(context.from, "Módulo *$tipo* não encontrado.\nVerifique o código e tente novamente.")
                 sendBackButton(context, whatsappService, "precos")
                 return
             }
@@ -664,11 +664,11 @@ class AdminCommand(
             whatsappService.sendMessage(
                 context.from,
                 buildString {
-                    append("*Alterar Preco*\n\n")
-                    append("Modulo: *${info.label}*\n")
-                    append("Preco atual: R\$ ${"%.2f".format(current)}\n\n")
+                    append("*Alterar Preço*\n\n")
+                    append("Módulo: *${info.label}*\n")
+                    append("Preço atual: R\$ ${"%.2f".format(current)}\n\n")
                     append("Informe o novo valor em R\$:\n")
-                    append("Ex: `25.00` ou `0` para gratis")
+                    append("Ex: `25.00` ou `0` para grátis")
                 }
             )
             return
@@ -676,23 +676,23 @@ class AdminCommand(
 
         val parsedValue = parsePrice(valor)
         if (parsedValue == null) {
-            whatsappService.sendMessage(context.from, "Valor invalido. Use o formato: `25.00`")
+            whatsappService.sendMessage(context.from, "Valor inválido. Use o formato: `25.00`")
             sendBackButton(context, whatsappService, "precos")
             return
         }
 
         val info = queryTypeRegistry.getTypeInfo(tipo)
         if (info == null) {
-            whatsappService.sendMessage(context.from, "Modulo *$tipo* nao encontrado.")
+            whatsappService.sendMessage(context.from, "Módulo *$tipo* não encontrado.")
             sendBackButton(context, whatsappService, "precos")
             return
         }
 
         pricingService.setPrice(tipo, parsedValue)
-        val priceText = if (parsedValue > BigDecimal.ZERO) "R\$ ${"%.2f".format(parsedValue)}" else "Gratis"
+        val priceText = if (parsedValue > BigDecimal.ZERO) "R\$ ${"%.2f".format(parsedValue)}" else "Grátis"
         whatsappService.sendMessage(
             context.from,
-            "Preco atualizado!\n\n*${info.label}*: $priceText"
+            "Preço atualizado!\n\n*${info.label}*: $priceText"
         )
         sendBackButton(context, whatsappService, "precos")
     }
@@ -705,8 +705,8 @@ class AdminCommand(
             whatsappService.sendMessage(
                 context.from,
                 buildString {
-                    append("*Preco Padrao*\n\n")
-                    append("Defina um valor unico para *todos* os ${queryTypeRegistry.types.size} modulos de consulta.\n\n")
+                    append("*Preço Padrão*\n\n")
+                    append("Defina um valor único para *todos* os ${queryTypeRegistry.types.size} módulos de consulta.\n\n")
                     append("Informe o valor em R\$:\n")
                     append("Ex: `25.00`\n\n")
                     append("_Use `0` para tornar todas as consultas gratuitas._")
@@ -717,19 +717,17 @@ class AdminCommand(
 
         val parsedValue = parsePrice(valor)
         if (parsedValue == null) {
-            whatsappService.sendMessage(context.from, "Valor invalido. Use o formato: `25.00`")
+            whatsappService.sendMessage(context.from, "Valor inválido. Use o formato: `25.00`")
             sendBackButton(context, whatsappService, "precos")
             return
         }
 
-        queryTypeRegistry.types.keys.forEach { tipo ->
-            pricingService.setPrice(tipo, parsedValue)
-        }
+        pricingService.setDefaultPrice(parsedValue, queryTypeRegistry.types.keys)
 
-        val priceText = if (parsedValue > BigDecimal.ZERO) "R\$ ${"%.2f".format(parsedValue)}" else "Gratis"
+        val priceText = if (parsedValue > BigDecimal.ZERO) "R\$ ${"%.2f".format(parsedValue)}" else "Grátis"
         whatsappService.sendMessage(
             context.from,
-            "Preco padrao definido!\n\nTodos os *${queryTypeRegistry.types.size}* modulos agora custam: *$priceText*"
+            "Preço padrão definido!\n\nTodos os *${queryTypeRegistry.types.size}* módulos agora custam: *$priceText*"
         )
         sendBackButton(context, whatsappService, "precos")
     }
@@ -745,20 +743,20 @@ class AdminCommand(
             adminService.setPendingAction(context.from, "ban")
             whatsappService.sendMessage(
                 context.from,
-                "*Banir Numero*\n\nInforme o numero a ser banido.\nFormato: numero completo com DDI\nEx: `5511999998888`\n\n_Numeros BR sao bloqueados com e sem o 9 automaticamente._"
+                "*Banir Número*\n\nInforme o número a ser banido.\nFormato: número completo com DDI\nEx: `5511999998888`\n\n_Números BR são bloqueados com e sem o 9 automaticamente._"
             )
             return
         }
 
         val normalized = number.replace(Regex("[^0-9]"), "")
         if (normalized.length < 10) {
-            whatsappService.sendMessage(context.from, "Numero invalido. Informe com DDI + DDD + numero.\nEx: `5511999998888`")
+            whatsappService.sendMessage(context.from, "Número inválido. Informe com DDI + DDD + número.\nEx: `5511999998888`")
             sendBackButton(context, whatsappService, "usuarios")
             return
         }
 
         if (adminService.isBanned(normalized)) {
-            whatsappService.sendMessage(context.from, "O numero *$normalized* ja esta banido.")
+            whatsappService.sendMessage(context.from, "O número *$normalized* já está banido.")
             sendBackButton(context, whatsappService, "usuarios")
             return
         }
@@ -766,7 +764,7 @@ class AdminCommand(
         val result = adminService.banNumber(normalized)
 
         if (result.reason == "admin") {
-            whatsappService.sendMessage(context.from, "Nao e possivel banir o numero admin.")
+            whatsappService.sendMessage(context.from, "Não é possível banir o número admin.")
             sendBackButton(context, whatsappService, "usuarios")
             return
         }
@@ -774,7 +772,7 @@ class AdminCommand(
         val variantsList = result.variants.joinToString("\n") { "  - $it" }
         whatsappService.sendMessage(
             context.from,
-            "*Numero banido com sucesso*\n\nVariantes bloqueadas:\n$variantsList"
+            "*Número banido com sucesso*\n\nVariantes bloqueadas:\n$variantsList"
         )
         sendBackButton(context, whatsappService, "usuarios")
     }
@@ -785,7 +783,7 @@ class AdminCommand(
         if (number == null) {
             val banned = adminService.getBannedNumbers()
             if (banned.isEmpty()) {
-                whatsappService.sendMessage(context.from, "Nenhum numero banido no momento.")
+                whatsappService.sendMessage(context.from, "Nenhum número banido no momento.")
                 sendBackButton(context, whatsappService, "usuarios")
                 return
             }
@@ -794,12 +792,12 @@ class AdminCommand(
             whatsappService.sendMessage(
                 context.from,
                 buildString {
-                    append("*Desbanir Numero*\n\n")
-                    append("Numeros banidos:\n")
+                    append("*Desbanir Número*\n\n")
+                    append("Números banidos:\n")
                     banned.forEachIndexed { i, n ->
                         append("${i + 1}. $n\n")
                     }
-                    append("\nInforme o numero que deseja desbanir:")
+                    append("\nInforme o número que deseja desbanir:")
                 }
             )
             return
@@ -807,7 +805,7 @@ class AdminCommand(
 
         val normalized = number.replace(Regex("[^0-9]"), "")
         if (!adminService.isBanned(normalized)) {
-            whatsappService.sendMessage(context.from, "O numero *$normalized* nao esta na lista de banidos.")
+            whatsappService.sendMessage(context.from, "O número *$normalized* não está na lista de banidos.")
             sendBackButton(context, whatsappService, "usuarios")
             return
         }
@@ -816,7 +814,7 @@ class AdminCommand(
         val variantsList = removed.joinToString("\n") { "  - $it" }
         whatsappService.sendMessage(
             context.from,
-            "*Numero desbanido com sucesso*\n\nVariantes desbloqueadas:\n$variantsList"
+            "*Número desbanido com sucesso*\n\nVariantes desbloqueadas:\n$variantsList"
         )
         sendBackButton(context, whatsappService, "usuarios")
     }
@@ -825,7 +823,7 @@ class AdminCommand(
         val banned = adminService.getBannedNumbers()
 
         if (banned.isEmpty()) {
-            whatsappService.sendMessage(context.from, "*Lista de Banidos*\n\nNenhum numero banido no momento.")
+            whatsappService.sendMessage(context.from, "*Lista de Banidos*\n\nNenhum número banido no momento.")
         } else {
             whatsappService.sendMessage(
                 context.from,
@@ -864,7 +862,7 @@ class AdminCommand(
                 append("Lucro estimado: *R\$ ${"%.2f".format(profit)}*\n")
 
                 if (recent.isNotEmpty()) {
-                    append("\n*Ultimos Pagamentos*\n")
+                    append("\n*Últimos Pagamentos*\n")
                     recent.forEach { p ->
                         append("${p.formatTimestamp()} | ${p.tipoLabel}\n")
                         append("  ${p.userPhone} | R\$ ${"%.2f".format(p.amount)}\n")
@@ -890,16 +888,15 @@ class AdminCommand(
             buildString {
                 append("*Pagamentos Pendentes* (${pending.size})\n\n")
                 pending.forEach { (phone, session) ->
-                    val method = when (session.paymentMethod) {
-                        "pix" -> "PIX"
-                        "card" -> "Cartao"
+                    val method = when (session.status) {
+                        PaymentSessionManager.PaymentStatus.AWAITING_PAYMENT -> "PIX gerado"
                         else -> "Aguardando escolha"
                     }
                     append("*$phone*\n")
                     append("  ${session.tipoLabel} | ${session.query}\n")
                     append("  R\$ ${"%.2f".format(session.price)} | $method\n\n")
                 }
-                append("_Use 'Liberar Consulta' para aprovar manualmente._")
+                append("_Use 'Liberar Consulta' para aprovar manualmente sem precisar de webhook._")
             }
         )
 
@@ -912,7 +909,7 @@ class AdminCommand(
         if (number == null) {
             val pending = paymentSessionManager.getPendingSessions()
             if (pending.isEmpty()) {
-                whatsappService.sendMessage(context.from, "Nenhum pagamento pendente para liberar.")
+                whatsappService.sendMessage(context.from, "Nenhum pagamento pendente para liberar no momento.")
                 sendBackButton(context, whatsappService, "financeiro")
                 return
             }
@@ -922,12 +919,12 @@ class AdminCommand(
                 context.from,
                 buildString {
                     append("*Liberar Consulta*\n\n")
-                    append("Use esta opcao quando o cliente ja pagou mas o sistema nao confirmou automaticamente.\n\n")
+                    append("Use esta opção quando o cliente já pagou mas o sistema não confirmou automaticamente.\n\n")
                     append("Pagamentos pendentes:\n")
                     pending.forEach { (phone, session) ->
                         append("  *$phone* — ${session.tipoLabel} (R\$ ${"%.2f".format(session.price)})\n")
                     }
-                    append("\nInforme o numero para liberar:")
+                    append("\nInforme o número para liberar:")
                 }
             )
             return
@@ -937,7 +934,7 @@ class AdminCommand(
         val session = paymentSessionManager.getSession(normalized)
 
         if (session == null) {
-            whatsappService.sendMessage(context.from, "Nenhum pagamento pendente para *$normalized*.")
+            whatsappService.sendMessage(context.from, "Nenhum pagamento pendente encontrado para *$normalized*.")
             sendBackButton(context, whatsappService, "financeiro")
             return
         }
@@ -951,7 +948,7 @@ class AdminCommand(
         )
         whatsappService.sendButtons(
             to = normalized,
-            body = "Sua consulta *${session.tipoLabel}* esta liberada.",
+            body = "Sua consulta *${session.tipoLabel}* está liberada.",
             buttons = listOf(
                 Button(id = "/consultar pago", title = "Consultar Agora")
             )
@@ -970,17 +967,17 @@ class AdminCommand(
 
     private fun handleBlock(context: CommandContext, whatsappService: WhatsappService) {
         if (adminService.isBotBlocked()) {
-            whatsappService.sendMessage(context.from, "O bot ja esta bloqueado para consultas.")
+            whatsappService.sendMessage(context.from, "O bot já está bloqueado para consultas.")
         } else {
             adminService.blockBot()
-            whatsappService.sendMessage(context.from, "Bot *bloqueado*.\nNenhum cliente podera fazer consultas ate voce liberar.\nVoce continua podendo consultar normalmente.")
+            whatsappService.sendMessage(context.from, "Bot *bloqueado*.\nNenhum cliente poderá fazer consultas até você liberar.\nVocê continua podendo consultar normalmente.")
         }
         sendBackButton(context, whatsappService, "controle")
     }
 
     private fun handleUnblock(context: CommandContext, whatsappService: WhatsappService) {
         if (!adminService.isBotBlocked()) {
-            whatsappService.sendMessage(context.from, "O bot ja esta liberado para consultas.")
+            whatsappService.sendMessage(context.from, "O bot já está liberado para consultas.")
         } else {
             adminService.unblockBot()
             whatsappService.sendMessage(context.from, "Bot *liberado*.\nTodos os clientes podem fazer consultas novamente.")
@@ -1003,7 +1000,7 @@ class AdminCommand(
         whatsappService.sendMessage(
             context.from,
             buildString {
-                append("*Estatisticas de Consultas*\n\n")
+                append("*Estatísticas de Consultas*\n\n")
 
                 append("*Resumo Geral*\n")
                 append("Total de consultas: *$total*\n")
@@ -1014,8 +1011,8 @@ class AdminCommand(
                 append("*Custos Internos (API)*\n")
                 append("Gasto total: *R\$ ${"%.2f".format(cost)}*\n\n")
 
-                append("*Usuarios*\n")
-                append("Unicos: *$users*\n")
+                append("*Usuários*\n")
+                append("Únicos: *$users*\n")
                 append("Banidos: *${adminService.getBannedCount()}*")
             }
         )
@@ -1027,7 +1024,7 @@ class AdminCommand(
         val top = consultationStats.getTopTypes(10)
 
         if (top.isEmpty()) {
-            whatsappService.sendMessage(context.from, "*Top Modulos*\n\nNenhuma consulta registrada ainda.")
+            whatsappService.sendMessage(context.from, "*Top Módulos*\n\nNenhuma consulta registrada ainda.")
             sendBackButton(context, whatsappService, "relatorios")
             return
         }
@@ -1037,7 +1034,7 @@ class AdminCommand(
         whatsappService.sendMessage(
             context.from,
             buildString {
-                append("*Top Modulos Consultados*\n\n")
+                append("*Top Módulos Consultados*\n\n")
                 top.forEachIndexed { i, (label, count) ->
                     val pct = if (total > 0) "%.1f%%".format((count.toDouble() / total) * 100) else "0%"
                     append("${i + 1}. *$label*\n")
@@ -1053,7 +1050,7 @@ class AdminCommand(
         val logs = consultationStats.getRecentLog(10)
 
         if (logs.isEmpty()) {
-            whatsappService.sendMessage(context.from, "*Historico Recente*\n\nNenhuma consulta registrada ainda.")
+            whatsappService.sendMessage(context.from, "*Histórico Recente*\n\nNenhuma consulta registrada ainda.")
             sendBackButton(context, whatsappService, "relatorios")
             return
         }
@@ -1061,8 +1058,8 @@ class AdminCommand(
         whatsappService.sendMessage(
             context.from,
             buildString {
-                append("*Historico Recente*\n")
-                append("Ultimas ${logs.size} consultas\n\n")
+                append("*Histórico Recente*\n")
+                append("Últimas ${logs.size} consultas\n\n")
                 logs.forEach { entry ->
                     val status = if (entry.success) "ok" else "FALHA"
                     append("*${entry.formatTimestamp()}* [$status]\n")
@@ -1106,10 +1103,10 @@ class AdminCommand(
                 append("Uptime: ${s["uptime"]}\n")
                 append("Iniciado em: ${s["startedAt"]}\n\n")
 
-                append("*Modulos*\n")
+                append("*Módulos*\n")
                 append("Total: $totalTypes\n")
                 append("Ativos: $enabledCount\n")
-                append("Com preco: $pricedCount\n\n")
+                append("Com preço: $pricedCount\n\n")
 
                 append("*Consultas*\n")
                 append("Total: *$total*\n")
@@ -1123,8 +1120,8 @@ class AdminCommand(
                 append("Custo API: R\$ ${"%.2f".format(apiCost)}\n")
                 append("Lucro: *R\$ ${"%.2f".format(revenue.subtract(apiCost))}*\n\n")
 
-                append("*Usuarios*\n")
-                append("Unicos: $users\n")
+                append("*Usuários*\n")
+                append("Únicos: $users\n")
                 append("Banidos: $banned\n\n")
 
                 append("*Mensagens*\n")
@@ -1147,7 +1144,7 @@ class AdminCommand(
         paymentStats.reset()
         whatsappService.sendMessage(
             context.from,
-            "*Contadores resetados*\n\nEstatisticas de consultas e pagamentos foram zeradas.\nPrecos, modulos e bans *nao* foram afetados."
+            "*Contadores resetados*\n\nEstatísticas de consultas e pagamentos foram zeradas.\nPreços, módulos e bans *não* foram afetados."
         )
         sendBackButton(context, whatsappService, "controle")
     }

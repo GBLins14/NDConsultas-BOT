@@ -20,55 +20,43 @@ class PaymentWebhookController(
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(PaymentWebhookController::class.java)
+        // Status que indicam pagamento confirmado
+        private val PAID_STATUSES = setOf("completed", "paid", "approved", "confirmed")
     }
 
     /**
-     * Webhook do SyncPay (formato OLD OnCreate/OnUpdate).
+     * Webhook SyncPay - formato OnUpdate (cashin.update)
      *
-     * Payload esperado:
+     * Payload:
      * {
-     *   "data": {
-     *     "id": "uuid",
-     *     "idtransaction": "uuid",
-     *     "status": "pending" | "paid" | ...,
-     *     "amount": 1500,       // centavos
-     *     "end_to_end": "...",
-     *     ...
-     *   }
+     *   "id": "uuid",          <- identificador da transacao
+     *   "status": "completed", <- status
+     *   "amount": 10,
+     *   "final_amount": 9.4,
+     *   ...
      * }
      */
     @PostMapping("/webhook")
     fun handleWebhook(@RequestBody payload: Map<String, Any?>): ResponseEntity<Any> {
-        log.info("Webhook SyncPay recebido: {}", payload)
+        log.info("Webhook SyncPay recebido: status={}, id={}", payload["status"], payload["id"])
 
-        val data = payload["data"] as? Map<*, *>
-        if (data == null) {
-            log.warn("Webhook sem campo 'data': {}", payload)
-            return ResponseEntity.ok(mapOf("received" to true))
-        }
-
-        val status = data["status"]?.toString()
-        val transactionId = data["idtransaction"]?.toString() ?: data["id"]?.toString()
+        val transactionId = payload["id"]?.toString()
+        val status = payload["status"]?.toString()
 
         if (transactionId.isNullOrBlank()) {
-            log.warn("Webhook sem identifier: {}", data)
-            return ResponseEntity.ok(mapOf("received" to true))
+            log.warn("Webhook sem 'id': {}", payload)
+            return ResponseEntity.ok(emptyMap<String, Any>())
         }
 
-        log.info("Webhook SyncPay: status={}, transaction={}", status, transactionId)
-
-        // Verificar se e confirmacao de pagamento
-        if (status in listOf("paid", "approved", "completed", "confirmed")) {
+        if (status in PAID_STATUSES) {
             val session = paymentService.confirmPixPayment(transactionId)
 
             if (session != null) {
-                // Notificar o usuario
                 whatsappService.sendMessage(
                     session.userPhone,
                     "Pagamento de *R\$ ${"%.2f".format(session.price)}* confirmado!"
                 )
 
-                // Disparar a consulta automaticamente
                 val ctx = CommandContext(
                     from = session.userPhone,
                     senderName = "",
@@ -77,11 +65,16 @@ class PaymentWebhookController(
                     rawMessage = "/consultar pago"
                 )
                 commandProcessor.process(ctx)
+
+                log.info("Consulta disparada apos pagamento confirmado: {}", session.userPhone)
+            } else {
+                log.warn("Nenhuma sessao encontrada para transaction id: {}", transactionId)
             }
         } else {
-            log.info("Webhook com status nao-final: {} (transaction={})", status, transactionId)
+            log.info("Webhook com status nao-final ignorado: {} (id={})", status, transactionId)
         }
 
-        return ResponseEntity.ok(mapOf("received" to true))
+        // SyncPay espera resposta em até 5 segundos
+        return ResponseEntity.ok(emptyMap<String, Any>())
     }
 }

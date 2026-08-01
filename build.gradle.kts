@@ -23,11 +23,12 @@ repositories {
 extra["springModulithVersion"] = "2.0.7"
 
 dependencies {
-    //implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.springframework.modulith:spring-modulith-starter-core")
-    //implementation("org.springframework.modulith:spring-modulith-starter-jpa")
+    implementation("org.springframework.modulith:spring-modulith-starter-jpa")
+    runtimeOnly("org.postgresql:postgresql")
     implementation("tools.jackson.module:jackson-module-kotlin")
     implementation("com.github.librepdf:openpdf:2.0.3")
     implementation("com.google.zxing:core:3.5.3")

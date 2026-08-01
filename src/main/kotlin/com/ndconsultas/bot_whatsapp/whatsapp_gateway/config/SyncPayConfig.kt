@@ -20,7 +20,6 @@ class SyncPayConfig(
         log.info("SyncPay REST client configured — api-url: {}", properties.apiUrl)
         return RestClient.builder()
             .baseUrl(properties.apiUrl)
-            .defaultHeader("Authorization", "Bearer ${properties.apiKey}")
             .defaultHeader("Content-Type", "application/json")
             .defaultHeader("Accept", "application/json")
             .build()

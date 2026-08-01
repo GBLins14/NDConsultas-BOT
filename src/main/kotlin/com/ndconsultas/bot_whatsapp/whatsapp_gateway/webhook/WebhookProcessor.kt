@@ -68,7 +68,7 @@ class WebhookProcessor(
             // ── Check ban (admin nunca e afetado) ──────────────────
             if (adminService.isBanned(message.from) && !adminService.isAdmin(message.from)) {
                 log.info("Mensagem de numero banido ignorada: {}", message.from)
-                whatsappService.sendMessage(message.from, "Seu acesso foi bloqueado. Contate o administrador.")
+                whatsappService.sendMessage(message.from, "Seu acesso foi bloqueado. Entre em contato com o administrador.")
                 return@forEach
             }
 
@@ -105,19 +105,12 @@ class WebhookProcessor(
                     return@forEach
                 }
 
-                // 4. Coleta de cartao: rotear texto como input de cartao
+                // 4. Pagamento PIX pendente: lembrar o usuário
                 val paymentSession = paymentSessionManager.getSession(message.from)
-                if (paymentSession != null && paymentSession.status == PaymentSessionManager.PaymentStatus.COLLECTING_CARD) {
-                    val cardCtx = ctx.copy(rawMessage = "/consultar cartao_input ${incoming.text}")
-                    commandProcessor.process(cardCtx)
-                    return@forEach
-                }
-
-                // 5. Pagamento PIX pendente: lembrar o usuario
                 if (paymentSession != null && paymentSession.status == PaymentSessionManager.PaymentStatus.AWAITING_PAYMENT) {
                     whatsappService.sendMessage(
                         message.from,
-                        "Voce possui um pagamento pendente de *R\$ ${"%.2f".format(paymentSession.price)}* para *${paymentSession.tipoLabel}*.\n\nEfetue o pagamento via PIX para liberar a consulta."
+                        "Você possui um pagamento pendente de *R\$ ${"%.2f".format(paymentSession.price)}* para *${paymentSession.tipoLabel}*.\n\nEfetue o pagamento via PIX para liberar a consulta."
                     )
                     whatsappService.sendButtons(
                         to = message.from,

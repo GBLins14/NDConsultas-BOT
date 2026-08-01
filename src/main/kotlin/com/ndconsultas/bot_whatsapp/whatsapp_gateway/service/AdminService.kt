@@ -1,7 +1,10 @@
 package com.ndconsultas.bot_whatsapp.whatsapp_gateway.service
 
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.persistence.ConfigPersistenceService
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.annotation.Lazy
 import org.springframework.stereotype.Service
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -14,31 +17,29 @@ class AdminService(
         private val log = LoggerFactory.getLogger(AdminService::class.java)
     }
 
+    // @Lazy para evitar dependência circular com ConfigPersistenceService
+    @Autowired @Lazy
+    private lateinit var persistence: ConfigPersistenceService
+
     private val bannedNumbers = ConcurrentHashMap.newKeySet<String>()
     private val botBlocked = AtomicBoolean(false)
     private val pendingActions = ConcurrentHashMap<String, String>()
 
-    // ── Verificacao de admin ────────────────────────────────────────
-    // O campo 'from' vem do webhook do WhatsApp (servidor Meta),
-    // NAO do input do usuario. E impossivel falsificar.
+    // ── Verificação de admin ────────────────────────────────────────
 
-    fun isAdmin(phoneNumber: String): Boolean {
-        return adminPhoneNumber.isNotBlank() && phoneNumber == adminPhoneNumber
-    }
+    fun isAdmin(phoneNumber: String): Boolean =
+        adminPhoneNumber.isNotBlank() && phoneNumber == adminPhoneNumber
 
     fun isAdminConfigured(): Boolean = adminPhoneNumber.isNotBlank()
 
     // ── Ban ─────────────────────────────────────────────────────────
-    // Numeros BR podem vir com ou sem o 9 apos o DDD.
-    // Ex: 5581999536361 (com 9) e 558199536361 (sem 9).
-    // Sempre bane as duas variantes para garantir o bloqueio.
 
     fun banNumber(number: String): BanResult {
         val normalized = normalizeNumber(number)
         val variants = brVariants(normalized)
 
         if (variants.any { it == adminPhoneNumber }) {
-            log.warn("Tentativa de banir o numero admin bloqueada")
+            log.warn("Tentativa de banir o número admin bloqueada")
             return BanResult(false, emptySet(), "admin")
         }
 
@@ -47,7 +48,10 @@ class AdminService(
             if (bannedNumbers.add(v)) added.add(v)
         }
 
-        if (added.isNotEmpty()) log.info("Numeros banidos: {}", added)
+        if (added.isNotEmpty()) {
+            log.info("Números banidos: {}", added)
+            persistence.saveBannedNumbers(added)
+        }
         return BanResult(added.isNotEmpty(), variants, "ok")
     }
 
@@ -60,7 +64,10 @@ class AdminService(
             if (bannedNumbers.remove(v)) removed.add(v)
         }
 
-        if (removed.isNotEmpty()) log.info("Numeros desbanidos: {}", removed)
+        if (removed.isNotEmpty()) {
+            log.info("Números desbanidos: {}", removed)
+            persistence.deleteBannedNumbers(removed)
+        }
         return removed
     }
 
@@ -73,19 +80,31 @@ class AdminService(
 
     fun getBannedCount(): Int = bannedNumbers.size
 
+    /** Chamado apenas pelo ConfigPersistenceService no startup — não dispara save. */
+    fun loadBannedNumber(phone: String) {
+        bannedNumbers.add(phone)
+    }
+
     // ── Block ───────────────────────────────────────────────────────
 
     fun blockBot() {
         botBlocked.set(true)
         log.info("Bot bloqueado para consultas")
+        persistence.saveBotBlocked(true)
     }
 
     fun unblockBot() {
         botBlocked.set(false)
         log.info("Bot desbloqueado para consultas")
+        persistence.saveBotBlocked(false)
     }
 
     fun isBotBlocked(): Boolean = botBlocked.get()
+
+    /** Chamado apenas pelo ConfigPersistenceService no startup — não dispara save. */
+    fun loadBotBlocked() {
+        botBlocked.set(true)
+    }
 
     // ── Pending admin actions ───────────────────────────────────────
 
@@ -93,9 +112,7 @@ class AdminService(
         pendingActions[userId] = action
     }
 
-    fun consumePendingAction(userId: String): String? {
-        return pendingActions.remove(userId)
-    }
+    fun consumePendingAction(userId: String): String? = pendingActions.remove(userId)
 
     fun clearPendingAction(userId: String) {
         pendingActions.remove(userId)
@@ -103,16 +120,12 @@ class AdminService(
 
     // ── Helpers ─────────────────────────────────────────────────────
 
-    private fun normalizeNumber(number: String): String {
-        return number.replace(Regex("[^0-9]"), "")
-    }
+    private fun normalizeNumber(number: String): String =
+        number.replace(Regex("[^0-9]"), "")
 
     /**
-     * Gera variantes BR de um numero: com e sem o 9 apos o DDD.
-     * Formato BR: 55 + DDD(2 digitos) + numero(8 ou 9 digitos)
-     *
-     * 5581 9 99536361 (13 digitos, com 9) → tambem gera 558199536361 (12 digitos, sem 9)
-     * 5581 99536361   (12 digitos, sem 9) → tambem gera 5581999536361 (13 digitos, com 9)
+     * Gera variantes BR de um número: com e sem o 9 após o DDD.
+     * 5581999536361 (com 9) ↔ 558199536361 (sem 9)
      */
     private fun brVariants(number: String): Set<String> {
         val variants = mutableSetOf(number)
@@ -123,16 +136,8 @@ class AdminService(
         val rest = number.substring(4)
 
         when (number.length) {
-            13 -> {
-                // Com 9: remover o 9 apos DDD
-                if (rest.startsWith("9")) {
-                    variants.add("55${ddd}${rest.substring(1)}")
-                }
-            }
-            12 -> {
-                // Sem 9: adicionar o 9 apos DDD
-                variants.add("55${ddd}9${rest}")
-            }
+            13 -> if (rest.startsWith("9")) variants.add("55${ddd}${rest.substring(1)}")
+            12 -> variants.add("55${ddd}9${rest}")
         }
 
         return variants

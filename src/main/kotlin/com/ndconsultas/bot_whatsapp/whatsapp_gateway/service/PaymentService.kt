@@ -24,29 +24,32 @@ class PaymentService(
         val error: String? = null
     )
 
-    data class CardChargeResult(
-        val success: Boolean,
-        val paymentId: String? = null,
-        val brand: String? = null,
-        val last4: String? = null,
-        val error: String? = null
-    )
-
     // ── PIX ────────────────────────────────────────────────────────
 
-    fun generatePix(userPhone: String, amount: BigDecimal, description: String): PixResult {
+    fun generatePix(
+        userPhone: String,
+        amount: BigDecimal,
+        description: String
+    ): PixResult {
         return try {
-            val response = syncPayClient.createPixCashIn(amount, description)
+            val response = syncPayClient.createPixCashIn(
+                amount = amount,
+                description = description,
+                clientPhone = userPhone
+            )
 
             if (response.pix_code.isNullOrBlank() || response.identifier.isNullOrBlank()) {
                 log.error("SyncPay retornou PIX sem codigo ou identifier")
                 return PixResult(false, error = "Erro ao gerar PIX. Tente novamente.")
             }
 
-            // Gerar QR Code
-            val qrBytes = qrCodeService.generate(response.pix_code)
+            val qrBytes = try {
+                qrCodeService.generate(response.pix_code)
+            } catch (e: Exception) {
+                log.warn("Falha ao gerar QR Code: {}", e.message)
+                null
+            }
 
-            // Atualizar sessao
             paymentSessionManager.setMethodPix(userPhone, response.pix_code, response.identifier)
 
             PixResult(
@@ -61,70 +64,18 @@ class PaymentService(
         }
     }
 
-    // ── Cartao ─────────────────────────────────────────────────────
-
-    fun chargeCard(
-        userPhone: String,
-        cardInput: PaymentSessionManager.CardInput,
-        amount: BigDecimal,
-        description: String
-    ): CardChargeResult {
-        return try {
-            paymentSessionManager.markProcessing(userPhone)
-
-            // 1. Criar token do cartao
-            val tokenResponse = syncPayClient.createCardToken(
-                number = cardInput.number!!,
-                holderName = cardInput.holderName!!,
-                expiryMonth = cardInput.expiryMonth!!,
-                expiryYear = cardInput.expiryYear!!,
-                cvv = cardInput.cvv!!
-            )
-
-            val token = tokenResponse.data?.token
-            if (token.isNullOrBlank()) {
-                paymentSessionManager.markFailed(userPhone)
-                return CardChargeResult(false, error = "Erro ao processar cartao. Verifique os dados e tente novamente.")
-            }
-
-            // 2. Cobrar
-            val chargeResponse = syncPayClient.chargeCard(token, amount, description)
-
-            val paymentId = chargeResponse.identifier ?: "card_${System.currentTimeMillis()}"
-
-            // 3. Marcar como pago
-            paymentSessionManager.markPaid(userPhone, paymentId)
-
-            val session = paymentSessionManager.getSession(userPhone)
-            if (session != null) {
-                paymentStats.record(userPhone, session.tipo, session.tipoLabel, amount, paymentId)
-            }
-
-            CardChargeResult(
-                success = true,
-                paymentId = paymentId,
-                brand = tokenResponse.data.brand,
-                last4 = tokenResponse.data.last4
-            )
-        } catch (e: Exception) {
-            log.error("Erro ao cobrar cartao para {}: {}", userPhone, e.message, e)
-            paymentSessionManager.markFailed(userPhone)
-            CardChargeResult(false, error = "Erro ao processar pagamento. Verifique os dados do cartao e tente novamente.")
-        }
-    }
-
     // ── Webhook de confirmacao PIX ─────────────────────────────────
 
-    fun confirmPixPayment(identifier: String): PaymentSessionManager.PaymentSession? {
-        val session = paymentSessionManager.findByPixIdentifier(identifier) ?: run {
-            log.warn("Webhook PIX recebido para identifier desconhecido: {}", identifier)
+    fun confirmPixPayment(transactionId: String): PaymentSessionManager.PaymentSession? {
+        val session = paymentSessionManager.findByPixIdentifier(transactionId) ?: run {
+            log.warn("Webhook PIX recebido para identifier desconhecido: {}", transactionId)
             return null
         }
 
-        paymentSessionManager.markPaid(session.userPhone, identifier)
-        paymentStats.record(session.userPhone, session.tipo, session.tipoLabel, session.price, identifier)
+        paymentSessionManager.markPaid(session.userPhone, transactionId)
+        paymentStats.record(session.userPhone, session.tipo, session.tipoLabel, session.price, transactionId)
 
-        log.info("PIX confirmado via webhook: {} - {} R$ {}", session.userPhone, session.tipo, "%.2f".format(session.price))
+        log.info("PIX confirmado: {} - {} R${}", session.userPhone, session.tipo, "%.2f".format(session.price))
         return paymentSessionManager.getSession(session.userPhone)
     }
 }

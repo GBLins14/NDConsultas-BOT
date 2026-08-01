@@ -1,6 +1,11 @@
 spring:
   application:
     name: NDConsultas-BOT
+  jpa:
+    hibernate:
+      ddl-auto: update
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    open-in-view: false
   jackson:
     default-property-inclusion: non_null
     deserialization:
@@ -20,7 +25,8 @@ admin:
 
 syncpay:
   api-url: ${SYNCPAY_API_URL:https://api.syncpay.com.br}
-  api-key: ${SYNCPAY_API_KEY}
+  client-id: ${SYNCPAY_CLIENT_ID}
+  client-secret: ${SYNCPAY_CLIENT_SECRET}
   webhook-url: ${SYNCPAY_WEBHOOK_URL}
 
 server:
