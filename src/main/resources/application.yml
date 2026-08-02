@@ -24,7 +24,7 @@ admin:
   phone-number: ${ADMIN_PHONE_NUMBER}
 
 bot:
-  logo-url: ${BOT_LOGO_URL:https://ibb.co/62XzQX3}
+  logo-url: ${BOT_LOGO_URL:https://i.ibb.co/yD4t24w/logo-nd.jpg}
 
 syncpay:
   api-url: ${SYNCPAY_API_URL:https://api.syncpayments.com.br}
