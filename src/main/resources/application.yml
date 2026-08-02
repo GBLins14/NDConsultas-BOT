@@ -23,11 +23,10 @@ central:
 admin:
   phone-number: ${ADMIN_PHONE_NUMBER}
 
-syncpay:
-  api-url: ${SYNCPAY_API_URL:https://api.syncpayments.com.br}
-  client-id: ${SYNCPAY_CLIENT_ID}
-  client-secret: ${SYNCPAY_CLIENT_SECRET}
-  webhook-url: ${SYNCPAY_WEBHOOK_URL}
+asaas:
+  api-url: ${ASAAS_API_URL:https://api.asaas.com}
+  api-key: ${ASAAS_API_KEY}
+  webhook-token: ${ASAAS_WEBHOOK_TOKEN:}
 
 server:
   port: ${SERVER_PORT:8080}

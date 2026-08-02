@@ -7,21 +7,23 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.web.client.RestClient
 
 @Configuration
-@EnableConfigurationProperties(SyncPayProperties::class)
-class SyncPayConfig(
-    private val properties: SyncPayProperties
+@EnableConfigurationProperties(AsaasProperties::class)
+class AsaasConfig(
+    private val properties: AsaasProperties
 ) {
     companion object {
-        private val log = LoggerFactory.getLogger(SyncPayConfig::class.java)
+        private val log = LoggerFactory.getLogger(AsaasConfig::class.java)
     }
 
     @Bean
-    fun syncPayRestClient(): RestClient {
-        log.info("SyncPay REST client configured — api-url: {}", properties.apiUrl)
+    fun asaasRestClient(): RestClient {
+        log.info("Asaas REST client configured — api-url: {}", properties.apiUrl)
         return RestClient.builder()
             .baseUrl(properties.apiUrl)
             .defaultHeader("Content-Type", "application/json")
             .defaultHeader("Accept", "application/json")
+            .defaultHeader("access_token", properties.apiKey)
+            .defaultHeader("User-Agent", "NDConsultas-BOT/1.0.0")
             .build()
     }
 }

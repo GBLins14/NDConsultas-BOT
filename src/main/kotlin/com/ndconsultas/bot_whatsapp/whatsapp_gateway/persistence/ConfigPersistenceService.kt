@@ -1,6 +1,7 @@
 package com.ndconsultas.bot_whatsapp.whatsapp_gateway.persistence
 
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.AdminService
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PaymentService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PricingService
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Lazy
@@ -17,8 +18,10 @@ class ConfigPersistenceService(
     private val priceRepo: ModulePriceRepository,
     private val disabledRepo: DisabledModuleRepository,
     private val settingRepo: BotSettingRepository,
+    private val customerRepo: AsaasCustomerRepository,
     @Lazy private val pricingService: PricingService,
-    @Lazy private val adminService: AdminService
+    @Lazy private val adminService: AdminService,
+    @Lazy private val paymentService: PaymentService
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(ConfigPersistenceService::class.java)
@@ -37,13 +40,14 @@ class ConfigPersistenceService(
             priceRepo.findAll().forEach { pricingService.loadPrice(it.tipo, it.price) }
             disabledRepo.findAll().forEach { pricingService.loadDisabledModule(it.tipo) }
             bannedRepo.findAll().forEach { adminService.loadBannedNumber(it.phone) }
+            customerRepo.findAll().forEach { paymentService.loadCustomer(it.phone, it.customerId) }
             settingRepo.findById(KEY_BOT_BLOCKED).ifPresent {
                 if (it.value == "true") adminService.loadBotBlocked()
             }
 
             log.info(
-                "Configurações carregadas — preços: {}, módulos desativados: {}, banidos: {}",
-                priceRepo.count(), disabledRepo.count(), bannedRepo.count()
+                "Configurações carregadas — preços: {}, módulos desativados: {}, banidos: {}, clientes Asaas: {}",
+                priceRepo.count(), disabledRepo.count(), bannedRepo.count(), customerRepo.count()
             )
         } catch (e: Exception) {
             log.error("Falha ao carregar configurações do banco (bot iniciará com valores padrão): {}", e.message)

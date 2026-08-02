@@ -888,9 +888,9 @@ class AdminCommand(
                 append("*Pagamentos Pendentes* (${pending.size})\n\n")
                 pending.forEach { (phone, session) ->
                     val method = when (session.status) {
-                        PaymentSessionManager.PaymentStatus.AWAITING_PAYMENT -> "PIX gerado"
-                        PaymentSessionManager.PaymentStatus.COLLECTING_CARD -> "Cartão (coletando dados)"
-                        else -> "Aguardando escolha"
+                        PaymentSessionManager.PaymentStatus.AWAITING_PAYMENT -> "Aguardando pagamento"
+                        PaymentSessionManager.PaymentStatus.AWAITING_CPF -> "Aguardando CPF"
+                        else -> "Iniciando"
                     }
                     append("*$phone*\n")
                     append("  ${session.tipoLabel} | ${session.query}\n")

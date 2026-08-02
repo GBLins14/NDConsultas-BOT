@@ -105,19 +105,19 @@ class WebhookProcessor(
                     return@forEach
                 }
 
-                // 4. Coleta de cartão: rotear texto como input de cartão
+                // 4. Coleta de CPF: rotear texto como input de CPF
                 val paymentSession = paymentSessionManager.getSession(message.from)
-                if (paymentSession != null && paymentSession.status == PaymentSessionManager.PaymentStatus.COLLECTING_CARD) {
-                    val cardCtx = ctx.copy(rawMessage = "/consultar cartao_input ${incoming.text}")
-                    commandProcessor.process(cardCtx)
+                if (paymentSession != null && paymentSession.status == PaymentSessionManager.PaymentStatus.AWAITING_CPF) {
+                    val cpfCtx = ctx.copy(rawMessage = "/consultar cpf_input ${incoming.text}")
+                    commandProcessor.process(cpfCtx)
                     return@forEach
                 }
 
-                // 5. Pagamento PIX pendente: lembrar o usuário
+                // 5. Pagamento pendente: lembrar o usuário
                 if (paymentSession != null && paymentSession.status == PaymentSessionManager.PaymentStatus.AWAITING_PAYMENT) {
                     whatsappService.sendMessage(
                         message.from,
-                        "Você possui um pagamento pendente de *R\$ ${"%.2f".format(paymentSession.price)}* para *${paymentSession.tipoLabel}*.\n\nEfetue o pagamento via PIX para liberar a consulta."
+                        "Você possui um pagamento pendente de *R\$ ${"%.2f".format(paymentSession.price)}* para *${paymentSession.tipoLabel}*.\n\nClique no link enviado anteriormente para pagar via PIX ou cartão."
                     )
                     whatsappService.sendButtons(
                         to = message.from,

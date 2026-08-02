@@ -2,6 +2,7 @@ package com.ndconsultas.bot_whatsapp.whatsapp_gateway.controller
 
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.command.CommandContext
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.command.CommandProcessor
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.config.AsaasProperties
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PaymentService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.WhatsappService
 import org.slf4j.LoggerFactory
@@ -13,69 +14,58 @@ import org.springframework.web.bind.annotation.*
 class PaymentWebhookController(
     private val paymentService: PaymentService,
     private val commandProcessor: CommandProcessor,
-    private val whatsappService: WhatsappService
+    private val whatsappService: WhatsappService,
+    private val asaasProperties: AsaasProperties
 ) {
 
     companion object {
         private val log = LoggerFactory.getLogger(PaymentWebhookController::class.java)
 
-        private val PAID_STATUSES = setOf(
-            "completed"
+        private val PAID_EVENTS = setOf(
+            "PAYMENT_RECEIVED",
+            "PAYMENT_CONFIRMED"
         )
     }
 
     @PostMapping("/webhook")
     fun handleWebhook(
+        @RequestHeader("asaas-access-token", required = false) webhookToken: String?,
         @RequestBody payload: Map<String, Any?>
-    ): ResponseEntity<Map<String, Any>> {
+    ): ResponseEntity<Any> {
 
-        val data = (payload["data"] as? Map<*, *>) ?: payload
-
-        val transactionId =
-            data["id"]?.toString()
-                ?: data["idtransaction"]?.toString()
-
-        val status =
-            data["status"]
-                ?.toString()
-                ?.trim()
-                ?.lowercase()
-
-        log.info(
-            "Webhook SyncPay recebido: status={}, id={}",
-            status,
-            transactionId
-        )
-
-        if (transactionId.isNullOrBlank()) {
-            log.warn("Webhook sem id da transação: {}", payload)
-            return ResponseEntity.ok(emptyMap())
+        // Validar token do webhook (se configurado)
+        if (asaasProperties.webhookToken.isNotBlank() && webhookToken != asaasProperties.webhookToken) {
+            log.warn("Webhook Asaas com token inválido")
+            return ResponseEntity.status(401).build()
         }
 
-        if (status == null || status !in PAID_STATUSES) {
-            log.info(
-                "Webhook ignorado. Status={} Transaction={}",
-                status,
-                transactionId
-            )
-            return ResponseEntity.ok(emptyMap())
+        val event = payload["event"]?.toString()
+        val paymentData = payload["payment"] as? Map<*, *>
+        val paymentId = paymentData?.get("id")?.toString()
+
+        log.info("Webhook Asaas recebido: event={}, paymentId={}", event, paymentId)
+
+        if (event == null || event !in PAID_EVENTS) {
+            log.info("Webhook Asaas ignorado: event={}", event)
+            return ResponseEntity.ok().build()
+        }
+
+        if (paymentId.isNullOrBlank()) {
+            log.warn("Webhook Asaas sem paymentId: {}", payload)
+            return ResponseEntity.ok().build()
         }
 
         return try {
-
-            val session = paymentService.confirmPixPayment(transactionId)
+            val session = paymentService.confirmPayment(paymentId)
 
             if (session == null) {
-                log.warn(
-                    "Nenhuma sessão encontrada para transactionId={}",
-                    transactionId
-                )
-                return ResponseEntity.ok(emptyMap())
+                log.warn("Nenhuma sessão encontrada para paymentId={}", paymentId)
+                return ResponseEntity.ok().build()
             }
 
             whatsappService.sendMessage(
                 session.userPhone,
-                "✅ Pagamento de *R$ ${"%.2f".format(session.price)}* confirmado!"
+                "Pagamento de *R\$ ${"%.2f".format(session.price)}* confirmado!"
             )
 
             commandProcessor.process(
@@ -88,23 +78,12 @@ class PaymentWebhookController(
                 )
             )
 
-            log.info(
-                "Consulta liberada para {} (transaction={})",
-                session.userPhone,
-                transactionId
-            )
+            log.info("Consulta liberada para {} (paymentId={})", session.userPhone, paymentId)
 
-            ResponseEntity.ok(emptyMap())
-
+            ResponseEntity.ok().build()
         } catch (e: Exception) {
-
-            log.error(
-                "Erro processando webhook {}",
-                transactionId,
-                e
-            )
-
-            ResponseEntity.ok(emptyMap())
+            log.error("Erro processando webhook Asaas {}", paymentId, e)
+            ResponseEntity.ok().build()
         }
     }
 }
