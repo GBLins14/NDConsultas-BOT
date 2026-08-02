@@ -1,5 +1,6 @@
 package com.ndconsultas.bot_whatsapp.whatsapp_gateway.client
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.config.SyncPayProperties
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
@@ -83,6 +84,7 @@ class SyncPayClient(
         val user_id: String
     )
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     data class CashInRequest(
         val amount: Double,
         val description: String? = null,
