@@ -1,120 +1,168 @@
 package com.ndconsultas.bot_whatsapp.whatsapp_gateway.service
 
-import com.ndconsultas.bot_whatsapp.whatsapp_gateway.client.AsaasClient
-import com.ndconsultas.bot_whatsapp.whatsapp_gateway.persistence.AsaasCustomerEntity
-import com.ndconsultas.bot_whatsapp.whatsapp_gateway.persistence.AsaasCustomerRepository
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.client.SyncPayClient
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.config.SyncPayProperties
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
-import java.util.concurrent.ConcurrentHashMap
 
 @Service
 class PaymentService(
-    private val asaasClient: AsaasClient,
+    private val syncPayClient: SyncPayClient,
+    private val syncPayProperties: SyncPayProperties,
     private val paymentSessionManager: PaymentSessionManager,
     private val paymentStats: PaymentStats,
-    private val customerRepository: AsaasCustomerRepository
+    private val qrCodeService: QrCodeService
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(PaymentService::class.java)
+        private val CARD_APPROVED_STATUSES = setOf("approved", "completed", "paid", "confirmed")
     }
 
-    private val customerCache = ConcurrentHashMap<String, String>()
-
-    data class CheckoutResult(
+    data class PixResult(
         val success: Boolean,
-        val invoiceUrl: String? = null,
-        val paymentId: String? = null,
+        val pixCode: String? = null,
+        val identifier: String? = null,
+        val qrCodeBytes: ByteArray? = null,
         val error: String? = null
     )
 
-    // ── Customer ──────────────────────────────────────────────────
+    data class CardResult(
+        val success: Boolean,
+        val transactionId: String? = null,
+        val brand: String? = null,
+        val last4: String? = null,
+        val error: String? = null
+    )
 
-    fun getCustomerId(phone: String): String? = customerCache[phone]
+    // ── PIX ────────────────────────────────────────────────────────
 
-    fun createCustomer(phone: String, cpfCnpj: String, name: String = "Cliente"): String? {
+    fun generatePix(
+        userPhone: String,
+        amount: BigDecimal,
+        description: String
+    ): PixResult {
         return try {
-            val response = asaasClient.createCustomer(
-                name = name,
-                cpfCnpj = cpfCnpj,
-                phone = phone,
-                externalReference = phone
-            )
+            val splitRecipients = syncPayProperties.split
+                .filter { it.userId.isNotBlank() && it.percentage > 0 }
+                .map { SyncPayClient.SplitRecipient(percentage = it.percentage, user_id = it.userId) }
+                .ifEmpty { null }
 
-            val customerId = response.id
-            if (customerId.isNullOrBlank()) {
-                log.error("Asaas não retornou ID do cliente")
-                return null
-            }
-
-            customerCache[phone] = customerId
-            try {
-                customerRepository.save(AsaasCustomerEntity(phone, customerId))
-            } catch (e: Exception) {
-                log.warn("Falha ao persistir cliente Asaas (cache ok): {}", e.message)
-            }
-
-            log.info("Cliente Asaas criado: phone={}, customerId={}", phone, customerId)
-            customerId
-        } catch (e: Exception) {
-            log.error("Erro ao criar cliente Asaas para {}: {}", phone, e.message, e)
-            null
-        }
-    }
-
-    /** Chamado pelo ConfigPersistenceService no startup */
-    fun loadCustomer(phone: String, customerId: String) {
-        customerCache[phone] = customerId
-    }
-
-    // ── Payment ───────────────────────────────────────────────────
-
-    fun createPayment(userPhone: String, amount: BigDecimal, description: String): CheckoutResult {
-        return try {
-            val customerId = customerCache[userPhone]
-            if (customerId == null) {
-                log.error("Cliente Asaas não encontrado para {}", userPhone)
-                return CheckoutResult(false, error = "Erro interno. Tente novamente.")
-            }
-
-            val response = asaasClient.createPayment(
-                customerId = customerId,
+            val response = syncPayClient.createPixCashIn(
                 amount = amount,
                 description = description,
-                externalReference = userPhone
+                clientPhone = userPhone,
+                split = splitRecipients
             )
 
-            if (response.id.isNullOrBlank() || response.invoiceUrl.isNullOrBlank()) {
-                log.error("Asaas não retornou ID ou invoiceUrl da cobrança")
-                return CheckoutResult(false, error = "Erro ao criar cobrança. Tente novamente.")
+            if (response.pix_code.isNullOrBlank() || response.identifier.isNullOrBlank()) {
+                log.error("SyncPay retornou PIX sem código ou identifier")
+                return PixResult(false, error = "Erro ao gerar PIX. Tente novamente.")
             }
 
-            paymentSessionManager.setPaymentCreated(userPhone, response.id, response.invoiceUrl)
+            val qrBytes = try {
+                qrCodeService.generate(response.pix_code)
+            } catch (e: Exception) {
+                log.warn("Falha ao gerar QR Code: {}", e.message)
+                null
+            }
 
-            log.info("Cobrança Asaas criada: phone={}, paymentId={}", userPhone, response.id)
-            CheckoutResult(
+            paymentSessionManager.setMethodPix(userPhone, response.pix_code, response.identifier)
+
+            log.info(
+                "PIX criado -> identifier={}, pixCode={}",
+                response.identifier,
+                response.pix_code
+            )
+
+            PixResult(
                 success = true,
-                invoiceUrl = response.invoiceUrl,
-                paymentId = response.id
+                pixCode = response.pix_code,
+                identifier = response.identifier,
+                qrCodeBytes = qrBytes
             )
         } catch (e: Exception) {
-            log.error("Erro ao criar cobrança Asaas para {}: {}", userPhone, e.message, e)
-            CheckoutResult(false, error = "Erro ao criar cobrança. Tente novamente mais tarde.")
+            log.error("Erro ao gerar PIX para {}: {}", userPhone, e.message, e)
+            PixResult(false, error = "Erro ao gerar PIX. Tente novamente mais tarde.")
         }
     }
 
-    // ── Webhook de confirmação ────────────────────────────────────
+    // ── Cartão ─────────────────────────────────────────────────────
 
-    fun confirmPayment(asaasPaymentId: String): PaymentSessionManager.PaymentSession? {
-        val session = paymentSessionManager.findByPaymentId(asaasPaymentId) ?: run {
-            log.warn("Webhook Asaas recebido para paymentId desconhecido: {}", asaasPaymentId)
+    fun chargeCard(
+        userPhone: String,
+        cardInput: PaymentSessionManager.CardInput,
+        amount: BigDecimal,
+        description: String
+    ): CardResult {
+        return try {
+            // 1. Tokenizar cartão
+            val tokenResponse = syncPayClient.createCardToken(
+                cardNumber = cardInput.number!!,
+                holderName = cardInput.holderName!!,
+                expiryMonth = cardInput.expiryMonth!!,
+                expiryYear = cardInput.expiryYear!!,
+                cvv = cardInput.cvv!!
+            )
+
+            val cardToken = tokenResponse.token
+            if (cardToken.isNullOrBlank()) {
+                log.error("SyncPay não retornou token de cartão")
+                return CardResult(false, error = "Cartão recusado. Verifique os dados e tente novamente.")
+            }
+
+            // 2. Cobrar
+            val chargeResponse = syncPayClient.chargeCard(
+                amount = amount,
+                cardToken = cardToken,
+                description = description,
+                clientPhone = userPhone
+            )
+
+            val transactionId = chargeResponse.id
+            if (transactionId.isNullOrBlank()) {
+                log.error("SyncPay não retornou ID da transação de cartão")
+                return CardResult(false, error = chargeResponse.message ?: "Pagamento recusado.")
+            }
+
+            val status = chargeResponse.status?.lowercase()
+            if (status != null && status in CARD_APPROVED_STATUSES) {
+                // Pagamento aprovado na hora
+                paymentSessionManager.markPaid(userPhone, transactionId)
+                paymentStats.record(userPhone,
+                    paymentSessionManager.getSession(userPhone)?.tipo ?: "",
+                    paymentSessionManager.getSession(userPhone)?.tipoLabel ?: "",
+                    amount, transactionId
+                )
+            }
+
+            log.info("Cartão cobrado: id={}, status={}, brand={}", transactionId, status, tokenResponse.brand)
+
+            CardResult(
+                success = status in CARD_APPROVED_STATUSES,
+                transactionId = transactionId,
+                brand = tokenResponse.brand,
+                last4 = tokenResponse.last4,
+                error = if (status !in CARD_APPROVED_STATUSES) (chargeResponse.message ?: "Pagamento não aprovado.") else null
+            )
+        } catch (e: Exception) {
+            log.error("Erro ao cobrar cartão para {}: {}", userPhone, e.message, e)
+            CardResult(false, error = "Erro ao processar pagamento. Tente novamente.")
+        }
+    }
+
+    // ── Webhook de confirmação PIX ─────────────────────────────────
+
+    fun confirmPixPayment(transactionId: String): PaymentSessionManager.PaymentSession? {
+        val session = paymentSessionManager.findByPixIdentifier(transactionId) ?: run {
+            log.warn("Webhook PIX recebido para identifier desconhecido: {}", transactionId)
             return null
         }
 
-        paymentSessionManager.markPaid(session.userPhone, asaasPaymentId)
-        paymentStats.record(session.userPhone, session.tipo, session.tipoLabel, session.price, asaasPaymentId)
+        paymentSessionManager.markPaid(session.userPhone, transactionId)
+        paymentStats.record(session.userPhone, session.tipo, session.tipoLabel, session.price, transactionId)
 
-        log.info("Pagamento Asaas confirmado: {} - {} R\${}", session.userPhone, session.tipo, "%.2f".format(session.price))
+        log.info("PIX confirmado: {} - {} R\${}", session.userPhone, session.tipo, "%.2f".format(session.price))
         return paymentSessionManager.getSession(session.userPhone)
     }
 }

@@ -9,5 +9,3 @@ interface ModulePriceRepository : JpaRepository<ModulePriceEntity, String>
 interface DisabledModuleRepository : JpaRepository<DisabledModuleEntity, String>
 
 interface BotSettingRepository : JpaRepository<BotSettingEntity, String>
-
-interface AsaasCustomerRepository : JpaRepository<AsaasCustomerEntity, String>

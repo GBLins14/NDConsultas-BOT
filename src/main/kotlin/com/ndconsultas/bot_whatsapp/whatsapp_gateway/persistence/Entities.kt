@@ -30,10 +30,3 @@ class BotSettingEntity(
     @Id val key: String = "",
     val value: String = ""
 )
-
-@Entity
-@Table(name = "asaas_customers")
-class AsaasCustomerEntity(
-    @Id val phone: String = "",
-    val customerId: String = ""
-)

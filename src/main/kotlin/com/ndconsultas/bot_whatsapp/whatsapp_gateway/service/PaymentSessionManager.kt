@@ -16,10 +16,30 @@ class PaymentSessionManager {
     }
 
     enum class PaymentStatus {
-        AWAITING_CPF,
+        AWAITING_METHOD,
         AWAITING_PAYMENT,
+        COLLECTING_CARD,
         PAID,
         CANCELLED
+    }
+
+    data class CardInput(
+        val number: String? = null,
+        val holderName: String? = null,
+        val expiryMonth: String? = null,
+        val expiryYear: String? = null,
+        val cvv: String? = null
+    ) {
+        fun currentStep(): String = when {
+            number == null -> "card_number"
+            holderName == null -> "card_holder"
+            expiryMonth == null -> "card_expiry"
+            cvv == null -> "card_cvv"
+            else -> "complete"
+        }
+
+        fun isComplete(): Boolean =
+            number != null && holderName != null && expiryMonth != null && expiryYear != null && cvv != null
     }
 
     data class PaymentSession(
@@ -31,7 +51,9 @@ class PaymentSessionManager {
         val status: PaymentStatus,
         val createdAt: Instant,
         val paymentId: String? = null,
-        val invoiceUrl: String? = null
+        val pixCode: String? = null,
+        val pixIdentifier: String? = null,
+        val cardInput: CardInput? = null
     ) {
         fun isExpired(): Boolean =
             status != PaymentStatus.PAID &&
@@ -41,14 +63,14 @@ class PaymentSessionManager {
 
     private val sessions = ConcurrentHashMap<String, PaymentSession>()
 
-    fun create(userPhone: String, tipo: String, tipoLabel: String, query: String, price: BigDecimal, needsCpf: Boolean): PaymentSession {
+    fun create(userPhone: String, tipo: String, tipoLabel: String, query: String, price: BigDecimal): PaymentSession {
         val session = PaymentSession(
             userPhone = userPhone,
             tipo = tipo,
             tipoLabel = tipoLabel,
             query = query,
             price = price,
-            status = if (needsCpf) PaymentStatus.AWAITING_CPF else PaymentStatus.AWAITING_PAYMENT,
+            status = PaymentStatus.AWAITING_METHOD,
             createdAt = Instant.now()
         )
         sessions[userPhone] = session
@@ -66,17 +88,41 @@ class PaymentSessionManager {
         return session
     }
 
-    fun setPaymentCreated(userPhone: String, asaasPaymentId: String, invoiceUrl: String): PaymentSession? {
+    // ── PIX ─────────────────────────────────────────────────────────
+
+    fun setMethodPix(userPhone: String, pixCode: String, pixIdentifier: String): PaymentSession? {
         val session = sessions[userPhone] ?: return null
         val updated = session.copy(
             status = PaymentStatus.AWAITING_PAYMENT,
-            paymentId = asaasPaymentId,
-            invoiceUrl = invoiceUrl
+            pixCode = pixCode,
+            pixIdentifier = pixIdentifier
         )
         sessions[userPhone] = updated
-        log.info("Cobrança Asaas criada para {}: paymentId={}", userPhone, asaasPaymentId)
+        log.info("PIX gerado para {}: identifier={}", userPhone, pixIdentifier)
         return updated
     }
+
+    // ── Cartão ──────────────────────────────────────────────────────
+
+    fun setMethodCard(userPhone: String): PaymentSession? {
+        val session = sessions[userPhone] ?: return null
+        val updated = session.copy(
+            status = PaymentStatus.COLLECTING_CARD,
+            cardInput = CardInput()
+        )
+        sessions[userPhone] = updated
+        log.info("Coleta de cartão iniciada para {}", userPhone)
+        return updated
+    }
+
+    fun updateCardInput(userPhone: String, cardInput: CardInput): PaymentSession? {
+        val session = sessions[userPhone] ?: return null
+        val updated = session.copy(cardInput = cardInput)
+        sessions[userPhone] = updated
+        return updated
+    }
+
+    // ── Comum ───────────────────────────────────────────────────────
 
     fun markPaid(userPhone: String, paymentId: String): PaymentSession? {
         val session = sessions[userPhone] ?: return null
@@ -96,16 +142,17 @@ class PaymentSessionManager {
         return session
     }
 
-    fun findByPaymentId(asaasPaymentId: String): PaymentSession? {
-        return sessions.values.firstOrNull { it.paymentId == asaasPaymentId }
+    fun findByPixIdentifier(identifier: String): PaymentSession? {
+        return sessions.values.firstOrNull { it.pixIdentifier == identifier }
     }
 
     fun getPendingSessions(): Map<String, PaymentSession> {
         sessions.entries.removeIf { it.value.isExpired() }
         return sessions.filter {
             it.value.status in listOf(
-                PaymentStatus.AWAITING_CPF,
-                PaymentStatus.AWAITING_PAYMENT
+                PaymentStatus.AWAITING_METHOD,
+                PaymentStatus.AWAITING_PAYMENT,
+                PaymentStatus.COLLECTING_CARD
             )
         }
     }
