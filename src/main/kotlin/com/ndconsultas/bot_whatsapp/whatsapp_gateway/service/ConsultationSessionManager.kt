@@ -1,5 +1,6 @@
 package com.ndconsultas.bot_whatsapp.whatsapp_gateway.service
 
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.Duration
 import java.time.Instant
@@ -15,6 +16,13 @@ class ConsultationSessionManager {
         val tipoLabel: String,
         val createdAt: Instant = Instant.now()
     )
+
+    @Scheduled(fixedRate = 300_000) // 5 minutos
+    fun cleanupExpiredSessions() {
+        sessions.entries.removeIf {
+            Duration.between(it.value.createdAt, Instant.now()).toMinutes() > 5
+        }
+    }
 
     fun setPending(userId: String, tipo: String, tipoLabel: String) {
         sessions[userId] = PendingConsultation(tipo, tipoLabel)

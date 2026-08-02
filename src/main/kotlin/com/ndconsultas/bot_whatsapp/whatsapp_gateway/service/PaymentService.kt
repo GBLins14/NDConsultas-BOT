@@ -159,6 +159,12 @@ class PaymentService(
             return null
         }
 
+        // Idempotência: ignorar se já foi confirmado
+        if (session.status == PaymentSessionManager.PaymentStatus.PAID) {
+            log.info("PIX já confirmado anteriormente: {} - {}", session.userPhone, transactionId)
+            return null
+        }
+
         paymentSessionManager.markPaid(session.userPhone, transactionId)
         paymentStats.record(session.userPhone, session.tipo, session.tipoLabel, session.price, transactionId)
 

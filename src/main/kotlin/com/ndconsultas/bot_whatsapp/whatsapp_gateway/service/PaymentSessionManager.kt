@@ -1,6 +1,7 @@
 package com.ndconsultas.bot_whatsapp.whatsapp_gateway.service
 
 import org.slf4j.LoggerFactory
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
 import java.time.Duration
@@ -13,6 +14,12 @@ class PaymentSessionManager {
     companion object {
         private val log = LoggerFactory.getLogger(PaymentSessionManager::class.java)
         private const val EXPIRY_MINUTES = 30L
+    }
+
+    @Scheduled(fixedRate = 300_000) // 5 minutos
+    fun cleanupExpiredSessions() {
+        val removed = sessions.entries.removeIf { it.value.isExpired() }
+        if (removed) log.info("Sessões de pagamento expiradas removidas")
     }
 
     enum class PaymentStatus {
@@ -91,45 +98,34 @@ class PaymentSessionManager {
     // ── PIX ─────────────────────────────────────────────────────────
 
     fun setMethodPix(userPhone: String, pixCode: String, pixIdentifier: String): PaymentSession? {
-        val session = sessions[userPhone] ?: return null
-        val updated = session.copy(
-            status = PaymentStatus.AWAITING_PAYMENT,
-            pixCode = pixCode,
-            pixIdentifier = pixIdentifier
-        )
-        sessions[userPhone] = updated
-        log.info("PIX gerado para {}: identifier={}", userPhone, pixIdentifier)
-        return updated
+        return sessions.computeIfPresent(userPhone) { _, session ->
+            log.info("PIX gerado para {}: identifier={}", userPhone, pixIdentifier)
+            session.copy(status = PaymentStatus.AWAITING_PAYMENT, pixCode = pixCode, pixIdentifier = pixIdentifier)
+        }
     }
 
     // ── Cartão ──────────────────────────────────────────────────────
 
     fun setMethodCard(userPhone: String): PaymentSession? {
-        val session = sessions[userPhone] ?: return null
-        val updated = session.copy(
-            status = PaymentStatus.COLLECTING_CARD,
-            cardInput = CardInput()
-        )
-        sessions[userPhone] = updated
-        log.info("Coleta de cartão iniciada para {}", userPhone)
-        return updated
+        return sessions.computeIfPresent(userPhone) { _, session ->
+            log.info("Coleta de cartão iniciada para {}", userPhone)
+            session.copy(status = PaymentStatus.COLLECTING_CARD, cardInput = CardInput())
+        }
     }
 
     fun updateCardInput(userPhone: String, cardInput: CardInput): PaymentSession? {
-        val session = sessions[userPhone] ?: return null
-        val updated = session.copy(cardInput = cardInput)
-        sessions[userPhone] = updated
-        return updated
+        return sessions.computeIfPresent(userPhone) { _, session ->
+            session.copy(cardInput = cardInput)
+        }
     }
 
     // ── Comum ───────────────────────────────────────────────────────
 
     fun markPaid(userPhone: String, paymentId: String): PaymentSession? {
-        val session = sessions[userPhone] ?: return null
-        val paid = session.copy(status = PaymentStatus.PAID, paymentId = paymentId)
-        sessions[userPhone] = paid
-        log.info("Pagamento confirmado: {} - {} (ID: {})", userPhone, session.tipo, paymentId)
-        return paid
+        return sessions.computeIfPresent(userPhone) { _, session ->
+            log.info("Pagamento confirmado: {} - {} (ID: {})", userPhone, session.tipo, paymentId)
+            session.copy(status = PaymentStatus.PAID, paymentId = paymentId)
+        }
     }
 
     fun consume(userPhone: String): PaymentSession? {

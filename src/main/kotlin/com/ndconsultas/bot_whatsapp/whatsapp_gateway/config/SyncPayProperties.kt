@@ -8,6 +8,7 @@ data class SyncPayProperties(
     val clientId: String = "",
     val clientSecret: String = "",
     val webhookUrl: String = "",
+    val webhookSecret: String = "",
     val split: List<SplitEntry> = emptyList()
 ) {
     data class SplitEntry(

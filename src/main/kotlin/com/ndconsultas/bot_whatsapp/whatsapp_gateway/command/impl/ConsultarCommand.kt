@@ -326,17 +326,17 @@ class ConsultarCommand(
     // ── Pagamento Cartão: iniciar coleta ───────────────────────────
 
     private fun startCardPayment(context: CommandContext, whatsappService: WhatsappService) {
-        val session = paymentSessionManager.getSession(context.from)
-        if (session == null) {
-            whatsappService.sendMessage(context.from, "Sessão de pagamento expirada. Inicie uma nova consulta.")
-            return
-        }
-
-        paymentSessionManager.setMethodCard(context.from)
-
         whatsappService.sendMessage(
             context.from,
-            "*Pagamento com Cartão de Crédito*\n\nValor: *R\$ ${"%.2f".format(session.price)}*\n\nInforme o *número do cartão*:"
+            "O pagamento via *cartão de crédito* está temporariamente indisponível.\n\nPor favor, utilize o *PIX* para realizar o pagamento."
+        )
+        whatsappService.sendButtons(
+            to = context.from,
+            body = "Deseja pagar via PIX?",
+            buttons = listOf(
+                Button(id = "/consultar pgto_pix", title = "Pagar com PIX"),
+                Button(id = "/consultar cancelar_pgto", title = "Cancelar")
+            )
         )
     }
 
