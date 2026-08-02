@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 @Service
 class AdminService(
-    @Value("\${admin.phone-number:}") private val adminPhoneNumber: String
+    @Value("\${admin.phone-number:}") private val superAdminPhone: String
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(AdminService::class.java)
@@ -22,15 +22,70 @@ class AdminService(
     private lateinit var persistence: ConfigPersistenceService
 
     private val bannedNumbers = ConcurrentHashMap.newKeySet<String>()
+    private val adminNumbers = ConcurrentHashMap.newKeySet<String>()
     private val botBlocked = AtomicBoolean(false)
     private val pendingActions = ConcurrentHashMap<String, String>()
 
     // ── Verificação de admin ────────────────────────────────────────
 
-    fun isAdmin(phoneNumber: String): Boolean =
-        adminPhoneNumber.isNotBlank() && phoneNumber == adminPhoneNumber
+    fun isSuperAdmin(phoneNumber: String): Boolean =
+        superAdminPhone.isNotBlank() && phoneNumber == superAdminPhone
 
-    fun isAdminConfigured(): Boolean = adminPhoneNumber.isNotBlank()
+    fun isAdmin(phoneNumber: String): Boolean =
+        isSuperAdmin(phoneNumber) || adminNumbers.contains(phoneNumber)
+
+    fun isAdminConfigured(): Boolean = superAdminPhone.isNotBlank()
+
+    // ── Gerenciar admins ────────────────────────────────────────────
+
+    fun addAdmin(phone: String): AdminResult {
+        val normalized = normalizeNumber(phone)
+
+        if (isSuperAdmin(normalized)) {
+            return AdminResult(false, normalized, "super_admin")
+        }
+
+        if (adminNumbers.contains(normalized)) {
+            return AdminResult(false, normalized, "already_admin")
+        }
+
+        adminNumbers.add(normalized)
+        persistence.saveAdminNumber(normalized)
+        log.info("Admin adicionado: {}", normalized)
+        return AdminResult(true, normalized, "ok")
+    }
+
+    fun removeAdmin(phone: String): AdminResult {
+        val normalized = normalizeNumber(phone)
+
+        if (isSuperAdmin(normalized)) {
+            return AdminResult(false, normalized, "super_admin")
+        }
+
+        if (!adminNumbers.contains(normalized)) {
+            return AdminResult(false, normalized, "not_admin")
+        }
+
+        adminNumbers.remove(normalized)
+        persistence.deleteAdminNumber(normalized)
+        log.info("Admin removido: {}", normalized)
+        return AdminResult(true, normalized, "ok")
+    }
+
+    fun getAdminNumbers(): Set<String> = adminNumbers.toSet()
+
+    fun getAdminCount(): Int = adminNumbers.size
+
+    /** Chamado apenas pelo ConfigPersistenceService no startup. */
+    fun loadAdminNumber(phone: String) {
+        adminNumbers.add(phone)
+    }
+
+    data class AdminResult(
+        val success: Boolean,
+        val phone: String,
+        val reason: String
+    )
 
     // ── Ban ─────────────────────────────────────────────────────────
 
@@ -38,8 +93,8 @@ class AdminService(
         val normalized = normalizeNumber(number)
         val variants = brVariants(normalized)
 
-        if (variants.any { it == adminPhoneNumber }) {
-            log.warn("Tentativa de banir o número admin bloqueada")
+        if (variants.any { isAdmin(it) }) {
+            log.warn("Tentativa de banir um número admin bloqueada")
             return BanResult(false, emptySet(), "admin")
         }
 

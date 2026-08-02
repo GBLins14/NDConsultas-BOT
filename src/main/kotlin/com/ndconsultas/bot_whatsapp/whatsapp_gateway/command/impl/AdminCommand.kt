@@ -66,6 +66,10 @@ class AdminCommand(
             "unblock" -> handleUnblock(context, whatsappService)
             "status" -> showFullStatus(context, whatsappService)
             "reset" -> handleReset(context, whatsappService)
+            // Administradores (somente super admin)
+            "admins" -> showAdmins(context, whatsappService)
+            "addadmin" -> handleAddAdmin(context, whatsappService)
+            "rmadmin" -> handleRemoveAdmin(context, whatsappService)
             else -> whatsappService.sendMessage(context.from, "Ação admin inválida.")
         }
     }
@@ -86,6 +90,8 @@ class AdminCommand(
         val totalTypes = queryTypeRegistry.types.size
         val enabledCount = pricingService.getEnabledCount(totalTypes)
         val pricedCount = pricingService.getConfiguredCount()
+        val isSuperAdmin = adminService.isSuperAdmin(context.from)
+        val adminCount = adminService.getAdminCount()
 
         whatsappService.sendMessage(
             context.from,
@@ -110,9 +116,53 @@ class AdminCommand(
 
                 append("*Usuários*\n")
                 append("Banidos: *$banned*\n")
+                if (isSuperAdmin) append("Admins: *${adminCount + 1}* (você + $adminCount)\n")
                 append("Msgs: ${s["messagesSent"]} env / ${s["messagesReceived"]} rec")
             }
         )
+
+        val menuRows = mutableListOf(
+            ListRow(
+                "/admin cat modulos",
+                "Módulos de Consulta",
+                "Ativar, desativar e ver detalhes"
+            ),
+            ListRow(
+                "/admin cat precos",
+                "Preços e Valores",
+                "Definir quanto cobrar por consulta"
+            ),
+            ListRow(
+                "/admin cat financeiro",
+                "Financeiro",
+                "Receita, pagamentos e liberações"
+            ),
+            ListRow(
+                "/admin cat usuarios",
+                "Gerenciar Usuários",
+                "Banir, desbanir e lista de bloqueados"
+            ),
+            ListRow(
+                "/admin cat relatorios",
+                "Relatórios",
+                "Estatísticas, ranking e histórico"
+            ),
+            ListRow(
+                "/admin cat controle",
+                "Controle do Bot",
+                "Bloquear bot, status e reset"
+            )
+        )
+
+        if (isSuperAdmin) {
+            menuRows.add(
+                ListRow(
+                    "/admin cat admins",
+                    "Administradores",
+                    "Adicionar e remover admins"
+                )
+            )
+        }
 
         whatsappService.sendList(
             to = context.from,
@@ -123,38 +173,7 @@ class AdminCommand(
             sections = listOf(
                 ListSection(
                     title = "Painel Administrativo",
-                    rows = listOf(
-                        ListRow(
-                            "/admin cat modulos",
-                            "Módulos de Consulta",
-                            "Ativar, desativar e ver detalhes"
-                        ),
-                        ListRow(
-                            "/admin cat precos",
-                            "Preços e Valores",
-                            "Definir quanto cobrar por consulta"
-                        ),
-                        ListRow(
-                            "/admin cat financeiro",
-                            "Financeiro",
-                            "Receita, pagamentos e liberações"
-                        ),
-                        ListRow(
-                            "/admin cat usuarios",
-                            "Gerenciar Usuários",
-                            "Banir, desbanir e lista de bloqueados"
-                        ),
-                        ListRow(
-                            "/admin cat relatorios",
-                            "Relatórios",
-                            "Estatísticas, ranking e histórico"
-                        ),
-                        ListRow(
-                            "/admin cat controle",
-                            "Controle do Bot",
-                            "Bloquear bot, status e reset"
-                        )
-                    )
+                    rows = menuRows
                 )
             )
         )
@@ -172,6 +191,7 @@ class AdminCommand(
             "usuarios" -> showUsuariosMenu(context, whatsappService)
             "relatorios" -> showRelatoriosMenu(context, whatsappService)
             "controle" -> showControleMenu(context, whatsappService)
+            "admins" -> showAdminsMenu(context, whatsappService)
             else -> showPanel(context, whatsappService)
         }
     }
@@ -1147,6 +1167,171 @@ class AdminCommand(
             "*Contadores resetados*\n\nEstatísticas de consultas e pagamentos foram zeradas.\nPreços, módulos e bans *não* foram afetados."
         )
         sendBackButton(context, whatsappService, "controle")
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // ADMINISTRADORES (somente super admin)
+    // ══════════════════════════════════════════════════════════════════
+
+    private fun requireSuperAdmin(context: CommandContext, whatsappService: WhatsappService): Boolean {
+        if (!adminService.isSuperAdmin(context.from)) {
+            whatsappService.sendMessage(context.from, "Apenas o *super admin* pode gerenciar administradores.")
+            sendBackButton(context, whatsappService)
+            return false
+        }
+        return true
+    }
+
+    private fun showAdminsMenu(context: CommandContext, whatsappService: WhatsappService) {
+        if (!requireSuperAdmin(context, whatsappService)) return
+
+        val admins = adminService.getAdminNumbers()
+
+        whatsappService.sendMessage(
+            context.from,
+            buildString {
+                append("*Gerenciar Administradores*\n\n")
+                append("Você é o *super admin* (número da ENV).\n")
+                append("Admins adicionados podem usar o painel completo, exceto gerenciar outros admins.\n\n")
+                append("*Admins atuais:* ${admins.size + 1}\n")
+                append("  *Super:* ${context.from}\n")
+                admins.forEach { phone ->
+                    append("  $phone\n")
+                }
+            }
+        )
+
+        whatsappService.sendList(
+            to = context.from,
+            header = "Administradores",
+            body = "Selecione uma ação:",
+            buttonLabel = "Ações",
+            footer = "ND Consultas | Admin",
+            sections = listOf(
+                ListSection(
+                    title = "Administradores",
+                    rows = listOf(
+                        ListRow("/admin admins", "Ver Administradores", "Lista completa de admins"),
+                        ListRow("/admin addadmin", "Adicionar Admin", "Dar acesso admin a um número"),
+                        ListRow("/admin rmadmin", "Remover Admin", "Revogar acesso admin")
+                    )
+                )
+            )
+        )
+    }
+
+    private fun showAdmins(context: CommandContext, whatsappService: WhatsappService) {
+        if (!requireSuperAdmin(context, whatsappService)) return
+
+        val admins = adminService.getAdminNumbers()
+
+        whatsappService.sendMessage(
+            context.from,
+            buildString {
+                append("*Lista de Administradores*\n\n")
+                append("1. *${context.from}* (super admin)\n")
+                if (admins.isEmpty()) {
+                    append("\nNenhum admin adicional cadastrado.")
+                } else {
+                    admins.forEachIndexed { i, phone ->
+                        append("${i + 2}. $phone\n")
+                    }
+                }
+                append("\n_O super admin não pode ser removido._")
+            }
+        )
+
+        sendBackButton(context, whatsappService, "admins")
+    }
+
+    private fun handleAddAdmin(context: CommandContext, whatsappService: WhatsappService) {
+        if (!requireSuperAdmin(context, whatsappService)) return
+
+        val number = context.args.getOrNull(1)
+
+        if (number == null) {
+            adminService.setPendingAction(context.from, "addadmin")
+            whatsappService.sendMessage(
+                context.from,
+                "*Adicionar Admin*\n\nInforme o número completo com DDI.\nEx: `5581999998888`\n\n_O número terá acesso total ao painel administrativo._"
+            )
+            return
+        }
+
+        val normalized = number.replace(Regex("[^0-9]"), "")
+        if (normalized.length < 10) {
+            whatsappService.sendMessage(context.from, "Número inválido. Informe com DDI + DDD + número.\nEx: `5581999998888`")
+            sendBackButton(context, whatsappService, "admins")
+            return
+        }
+
+        val result = adminService.addAdmin(normalized)
+
+        when (result.reason) {
+            "super_admin" -> {
+                whatsappService.sendMessage(context.from, "Este número já é o *super admin*.")
+            }
+            "already_admin" -> {
+                whatsappService.sendMessage(context.from, "O número *$normalized* já é admin.")
+            }
+            "ok" -> {
+                whatsappService.sendMessage(
+                    context.from,
+                    "*Admin adicionado com sucesso*\n\nNúmero: *$normalized*\nAgora tem acesso ao painel administrativo."
+                )
+            }
+        }
+
+        sendBackButton(context, whatsappService, "admins")
+    }
+
+    private fun handleRemoveAdmin(context: CommandContext, whatsappService: WhatsappService) {
+        if (!requireSuperAdmin(context, whatsappService)) return
+
+        val number = context.args.getOrNull(1)
+
+        if (number == null) {
+            val admins = adminService.getAdminNumbers()
+            if (admins.isEmpty()) {
+                whatsappService.sendMessage(context.from, "Nenhum admin adicional para remover.")
+                sendBackButton(context, whatsappService, "admins")
+                return
+            }
+
+            adminService.setPendingAction(context.from, "rmadmin")
+            whatsappService.sendMessage(
+                context.from,
+                buildString {
+                    append("*Remover Admin*\n\n")
+                    append("Admins cadastrados:\n")
+                    admins.forEachIndexed { i, phone ->
+                        append("${i + 1}. $phone\n")
+                    }
+                    append("\nInforme o número para remover:")
+                }
+            )
+            return
+        }
+
+        val normalized = number.replace(Regex("[^0-9]"), "")
+        val result = adminService.removeAdmin(normalized)
+
+        when (result.reason) {
+            "super_admin" -> {
+                whatsappService.sendMessage(context.from, "O *super admin* não pode ser removido.")
+            }
+            "not_admin" -> {
+                whatsappService.sendMessage(context.from, "O número *$normalized* não é admin.")
+            }
+            "ok" -> {
+                whatsappService.sendMessage(
+                    context.from,
+                    "*Admin removido com sucesso*\n\nNúmero: *$normalized*\nAcesso ao painel revogado."
+                )
+            }
+        }
+
+        sendBackButton(context, whatsappService, "admins")
     }
 
     // ══════════════════════════════════════════════════════════════════

@@ -25,6 +25,12 @@ class DisabledModuleEntity(
 )
 
 @Entity
+@Table(name = "bot_admin_numbers")
+class AdminNumberEntity(
+    @Id val phone: String = ""
+)
+
+@Entity
 @Table(name = "bot_settings")
 class BotSettingEntity(
     @Id val key: String = "",
