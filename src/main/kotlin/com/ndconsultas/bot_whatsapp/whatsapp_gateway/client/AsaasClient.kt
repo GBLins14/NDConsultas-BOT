@@ -58,10 +58,14 @@ class AsaasClient(
     ): CustomerResponse {
         log.info("Criando cliente Asaas: cpf={}***", cpfCnpj.take(3))
 
+        val safeName = name.replace(Regex("[^\\p{L}\\p{N}\\s]"), "").trim().ifBlank { "Cliente" }
+
         val request = CustomerRequest(
-            name = name,
+            name = safeName,
             cpfCnpj = cpfCnpj.replace(Regex("[^0-9]"), ""),
-            mobilePhone = phone?.replace(Regex("[^0-9]"), "")?.takeLast(11),
+            mobilePhone = phone?.replace(Regex("[^0-9]"), "")?.let { digits ->
+                if (digits.startsWith("55") && digits.length >= 12) digits.drop(2) else digits
+            },
             notificationDisabled = true,
             externalReference = externalReference
         )

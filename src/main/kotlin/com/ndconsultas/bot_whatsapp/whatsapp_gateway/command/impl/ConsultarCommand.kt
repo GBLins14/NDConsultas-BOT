@@ -269,8 +269,18 @@ class ConsultarCommand(
         }
 
         val cpf = context.args.drop(1).joinToString("").replace(Regex("[^0-9]"), "")
-        if (cpf.length != 11 && cpf.length != 14) {
-            whatsappService.sendMessage(context.from, "CPF/CNPJ inválido. Informe apenas os números:")
+
+        val valid = when (cpf.length) {
+            11 -> isValidCpf(cpf)
+            14 -> isValidCnpj(cpf)
+            else -> false
+        }
+
+        if (!valid) {
+            whatsappService.sendMessage(
+                context.from,
+                "CPF/CNPJ inválido. Verifique o número e informe novamente:"
+            )
             return
         }
 
@@ -562,6 +572,40 @@ class ConsultarCommand(
             }
         }
         return result
+    }
+
+    private fun isValidCpf(cpf: String): Boolean {
+        if (cpf.all { it == cpf[0] }) return false
+
+        val d1 = (0..8).sumOf { (10 - it) * (cpf[it] - '0') }.let { sum ->
+            val r = sum % 11
+            if (r < 2) 0 else 11 - r
+        }
+        if (d1 != cpf[9] - '0') return false
+
+        val d2 = (0..9).sumOf { (11 - it) * (cpf[it] - '0') }.let { sum ->
+            val r = sum % 11
+            if (r < 2) 0 else 11 - r
+        }
+        return d2 == cpf[10] - '0'
+    }
+
+    private fun isValidCnpj(cnpj: String): Boolean {
+        if (cnpj.all { it == cnpj[0] }) return false
+
+        val w1 = intArrayOf(5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
+        val d1 = w1.indices.sumOf { w1[it] * (cnpj[it] - '0') }.let { sum ->
+            val r = sum % 11
+            if (r < 2) 0 else 11 - r
+        }
+        if (d1 != cnpj[12] - '0') return false
+
+        val w2 = intArrayOf(6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
+        val d2 = w2.indices.sumOf { w2[it] * (cnpj[it] - '0') }.let { sum ->
+            val r = sum % 11
+            if (r < 2) 0 else 11 - r
+        }
+        return d2 == cnpj[13] - '0'
     }
 
     private fun splitMessage(text: String, maxLength: Int): List<String> {
