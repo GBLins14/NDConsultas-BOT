@@ -91,7 +91,7 @@ class ConsultarCommand(
                     ListRow(
                         id = "/consultar $tipo",
                         title = info.label,
-                        description = "$priceText | ${info.returnSummary}"
+                        description = "Escolha para saber mais."
                     )
                 }
             )
