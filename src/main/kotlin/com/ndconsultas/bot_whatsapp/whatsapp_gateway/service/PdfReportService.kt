@@ -19,7 +19,8 @@ import java.awt.Color
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URI
-import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 @Service
@@ -201,7 +202,7 @@ class PdfReportService(
     private fun addConsultationInfo(document: Document, tipoLabel: String, query: String) {
         document.add(Paragraph(" "))
 
-        val now = LocalDateTime.now().format(DATE_FMT)
+        val now = ZonedDateTime.now(ZoneId.of("America/Sao_Paulo")).format(DATE_FMT)
 
         val sectionTitle = Paragraph("Relatorio de Consulta Veicular", font(13f, bold = true, color = PRIMARY))
         sectionTitle.spacingAfter = 8f
