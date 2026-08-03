@@ -91,7 +91,7 @@ class ConsultarCommand(
                     ListRow(
                         id = "/consultar $tipo",
                         title = info.label,
-                        description = "$priceText | ${info.inputPrompt.replace("*", "")}"
+                        description = "$priceText | ${info.returnSummary}"
                     )
                 }
             )
@@ -150,7 +150,7 @@ class ConsultarCommand(
 
         whatsappService.sendMessage(
             context.from,
-            "*${info.label}*$priceText\n\n${info.inputPrompt}:"
+            "*${info.label}*$priceText\n\n${info.description}\n\n*Retorna:* ${info.returnDetails}\n\n${info.inputPrompt}:"
         )
     }
 
