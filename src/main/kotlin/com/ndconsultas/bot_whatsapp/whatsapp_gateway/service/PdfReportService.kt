@@ -375,47 +375,53 @@ class PdfReportService(
             return
         }
 
-        // Separar dados em seções (maps de nível top-level) vs campos simples
-        val simplePairs = mutableListOf<Pair<String, Any?>>()
-        val sections = mutableListOf<Triple<String, String, Map<String, Any?>>>() // key, label, data
+        val collapsed = collapseData(data)
 
-        data.forEach { (key, value) ->
+        val simplePairs = mutableListOf<Pair<String, Any?>>()
+        val sections = mutableListOf<Triple<String, String, Any?>>()
+
+        collapsed.forEach { (key, value) ->
             when {
                 value is Map<*, *> && value.isNotEmpty() -> {
-                    @Suppress("UNCHECKED_CAST")
-                    sections.add(Triple(key, formatKey(key), value as Map<String, Any?>))
+                    sections.add(Triple(key, formatKey(key), value))
                 }
                 value is List<*> && value.isNotEmpty() && value.first() is Map<*, *> -> {
-                    // Lista de maps => cada item vira uma sub-seção
-                    value.forEachIndexed { index, item ->
-                        if (item is Map<*, *> && item.isNotEmpty()) {
-                            @Suppress("UNCHECKED_CAST")
-                            sections.add(Triple("${key}_${index}", "${formatKey(key)} [${index + 1}]", item as Map<String, Any?>))
-                        }
-                    }
+                    sections.add(Triple(key, formatKey(key), value))
                 }
                 else -> simplePairs.add(key to value)
             }
         }
 
-        // Campos simples no topo
         if (simplePairs.isNotEmpty()) {
             addSectionTitle(document, "Informacoes Gerais")
             addDataTable(document, simplePairs.map { (k, v) -> k to formatValue(v) })
         }
 
-        // Cada seção com header colorido
-        for ((_, label, sectionData) in sections) {
+        for ((_, label, value) in sections) {
             addSectionTitle(document, label)
-            renderSectionData(document, sectionData)
+            when (value) {
+                is Map<*, *> -> {
+                    @Suppress("UNCHECKED_CAST")
+                    renderSectionData(document, value as Map<String, Any?>)
+                }
+                is List<*> -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val items = value.filterIsInstance<Map<String, Any?>>()
+                    if (items.isNotEmpty()) {
+                        addGroupedTable(document, items)
+                    }
+                }
+            }
         }
     }
 
     private fun renderSectionData(document: Document, data: Map<String, Any?>) {
+        val collapsed = collapseData(data)
+
         val simplePairs = mutableListOf<Pair<String, String>>()
         val subSections = mutableListOf<Triple<String, String, Any?>>()
 
-        data.forEach { (key, value) ->
+        collapsed.forEach { (key, value) ->
             when {
                 value is Map<*, *> && value.isNotEmpty() -> subSections.add(Triple(key, formatKey(key), value))
                 value is List<*> && value.isNotEmpty() && value.first() is Map<*, *> -> subSections.add(Triple(key, formatKey(key), value))
@@ -432,22 +438,221 @@ class PdfReportService(
                 is Map<*, *> -> {
                     addSubSectionTitle(document, label)
                     @Suppress("UNCHECKED_CAST")
-                    val flat = flattenMap(value as Map<String, Any?>, "")
-                    addDataTable(document, flat)
+                    renderSectionData(document, value as Map<String, Any?>)
                 }
                 is List<*> -> {
-                    value.forEachIndexed { index, item ->
-                        if (item is Map<*, *> && item.isNotEmpty()) {
-                            addSubSectionTitle(document, "$label [${index + 1}]")
-                            @Suppress("UNCHECKED_CAST")
-                            val flat = flattenMap(item as Map<String, Any?>, "")
-                            addDataTable(document, flat)
-                        }
+                    addSubSectionTitle(document, label)
+                    @Suppress("UNCHECKED_CAST")
+                    val items = value.filterIsInstance<Map<String, Any?>>()
+                    if (items.isNotEmpty()) {
+                        addGroupedTable(document, items)
                     }
                 }
             }
         }
     }
+
+    // ── Colapsar {codigo, descricao} e sub-maps simples ───────────
+
+    private fun collapseData(data: Map<String, Any?>): Map<String, Any?> {
+        val result = linkedMapOf<String, Any?>()
+
+        data.forEach { (key, value) ->
+            when {
+                value is Map<*, *> && isCodigoDescricao(value) -> {
+                    @Suppress("UNCHECKED_CAST")
+                    result[key] = mergeCodigoDescricao(value as Map<String, Any?>)
+                }
+                value is Map<*, *> -> {
+                    @Suppress("UNCHECKED_CAST")
+                    result[key] = collapseData(value as Map<String, Any?>)
+                }
+                value is List<*> -> {
+                    result[key] = value.map { item ->
+                        if (item is Map<*, *>) {
+                            @Suppress("UNCHECKED_CAST")
+                            collapseData(item as Map<String, Any?>)
+                        } else item
+                    }
+                }
+                else -> result[key] = value
+            }
+        }
+        return result
+    }
+
+    private fun isCodigoDescricao(map: Map<*, *>): Boolean {
+        val keys = map.keys.map { it.toString().lowercase() }.toSet()
+        return keys.size <= 3 && keys.contains("codigo") && keys.contains("descricao")
+    }
+
+    private fun mergeCodigoDescricao(map: Map<String, Any?>): String {
+        val descricao = map["descricao"]?.toString()?.trim() ?: ""
+        val codigo = map["codigo"]?.toString()?.trim() ?: ""
+        return when {
+            descricao.isNotBlank() && codigo.isNotBlank() -> "$descricao ($codigo)"
+            descricao.isNotBlank() -> descricao
+            codigo.isNotBlank() -> codigo
+            else -> "Nao informado"
+        }
+    }
+
+    // ── Tabela agrupada para arrays de objetos ────────────────────
+
+    private fun addGroupedTable(document: Document, items: List<Map<String, Any?>>) {
+        if (items.isEmpty()) return
+
+        // Coletar todas as colunas (excluir sub-maps e listas de maps)
+        val columns = linkedSetOf<String>()
+        for (item in items) {
+            for ((key, value) in item) {
+                if (value !is Map<*, *> && !(value is List<*> && value.firstOrNull() is Map<*, *>)) {
+                    columns.add(key)
+                }
+            }
+        }
+
+        if (columns.isEmpty()) {
+            // Fallback: tudo é sub-map, render como flat
+            items.forEachIndexed { index, item ->
+                addSubSectionTitle(document, "[${index + 1}]")
+                val flat = flattenMap(item, "")
+                addDataTable(document, flat)
+            }
+            return
+        }
+
+        // Limitar colunas para caber no PDF (máx 6 colunas visíveis)
+        val visibleColumns = columns.toList().take(8)
+        val colCount = visibleColumns.size
+
+        val table = PdfPTable(colCount)
+        table.widthPercentage = 100f
+
+        // Header
+        for (col in visibleColumns) {
+            val cell = PdfPCell(Phrase(formatKey(col), font(7.5f, bold = true, color = Color.WHITE)))
+            cell.backgroundColor = PRIMARY_DARK
+            cell.setPadding(6f)
+            cell.horizontalAlignment = Element.ALIGN_CENTER
+            cell.border = Rectangle.BOX
+            cell.borderColor = PRIMARY_DARK
+            cell.borderWidth = 0.5f
+            table.addCell(cell)
+        }
+
+        // Rows
+        items.forEachIndexed { rowIndex, item ->
+            val rowBg = if (rowIndex % 2 == 0) Color.WHITE else LIGHT_BG
+
+            for (col in visibleColumns) {
+                val rawValue = item[col]
+                val text = formatValue(rawValue)
+                val sentiment = classifyValue(col, text)
+
+                val cellBg: Color
+                val textColor: Color
+
+                when (sentiment) {
+                    ValueSentiment.POSITIVE -> {
+                        cellBg = GREEN_BG
+                        textColor = GREEN
+                    }
+                    ValueSentiment.NEGATIVE -> {
+                        cellBg = RED_BG
+                        textColor = RED
+                    }
+                    ValueSentiment.WARNING -> {
+                        cellBg = YELLOW_BG
+                        textColor = YELLOW
+                    }
+                    ValueSentiment.NEUTRAL -> {
+                        cellBg = rowBg
+                        textColor = DARK_TEXT
+                    }
+                }
+
+                val cell = PdfPCell(Phrase(text, font(7f, color = textColor)))
+                cell.backgroundColor = cellBg
+                cell.setPadding(5f)
+                cell.horizontalAlignment = Element.ALIGN_CENTER
+                cell.verticalAlignment = Element.ALIGN_MIDDLE
+                cell.borderColor = BORDER_COLOR
+                cell.borderWidth = 0.5f
+                cell.minimumHeight = 22f
+                table.addCell(cell)
+            }
+        }
+
+        document.add(table)
+
+        // Se houver sub-maps dentro dos items que nao couberam na tabela, renderizar abaixo
+        items.forEachIndexed { index, item ->
+            val subMaps = item.filter { (key, value) ->
+                key !in visibleColumns && (value is Map<*, *> || (value is List<*> && value.firstOrNull() is Map<*, *>))
+            }
+            if (subMaps.isNotEmpty()) {
+                addSubSectionTitle(document, "Detalhes [${index + 1}]")
+                renderSectionData(document, subMaps)
+            }
+        }
+    }
+
+    // ── Classificação de sentimento dos valores ───────────────────
+
+    private enum class ValueSentiment { POSITIVE, NEGATIVE, WARNING, NEUTRAL }
+
+    private fun classifyValue(key: String, value: String): ValueSentiment {
+        val keyLower = key.lowercase()
+        val valueLower = value.lowercase()
+
+        // Campos que são indicadores de status/situação
+        val isStatusField = keyLower.contains("situacao") || keyLower.contains("condicao") ||
+            keyLower.contains("status") || keyLower.contains("ocorrencia") ||
+            keyLower.contains("sinistro") || keyLower.contains("restricao") ||
+            keyLower.contains("restri\u00e7\u00e3o") || keyLower.contains("roubo") ||
+            keyLower.contains("furto") || keyLower.contains("bloqueio") ||
+            keyLower.contains("existe") || keyLower.contains("score") ||
+            keyLower.contains("pontuacao") || keyLower.contains("chassi")
+
+        if (!isStatusField) return ValueSentiment.NEUTRAL
+
+        // Negativo
+        for (keyword in NEGATIVE_KEYWORDS) {
+            if (valueLower.contains(keyword)) return ValueSentiment.NEGATIVE
+        }
+        if (valueLower.contains("irregular") || valueLower.contains("cancelad") ||
+            valueLower.contains("bloqueado") || valueLower.contains("existe ocorrencia")
+        ) {
+            return ValueSentiment.NEGATIVE
+        }
+        if (keyLower.contains("existe") && (valueLower == "1" || valueLower == "sim" || valueLower == "true")) {
+            return ValueSentiment.NEGATIVE
+        }
+
+        // Warning
+        if (valueLower.contains("verificar") || valueLower.contains("n/c") ||
+            valueLower.contains("nao informado") || valueLower.contains("nao divulgado")
+        ) {
+            return ValueSentiment.WARNING
+        }
+
+        // Positivo
+        if (valueLower.contains("sucesso") || valueLower.contains("regular") ||
+            valueLower.contains("nenhum") || valueLower.contains("sem ") ||
+            valueLower.contains("nao existe") || valueLower.contains("livre") ||
+            valueLower.contains("sem restricao") || valueLower.contains("normal")
+        ) {
+            return ValueSentiment.POSITIVE
+        }
+        if (keyLower.contains("existe") && (valueLower == "0" || valueLower == "nao" || valueLower == "false")) {
+            return ValueSentiment.POSITIVE
+        }
+
+        return ValueSentiment.NEUTRAL
+    }
+
+    // ── Títulos e tabela de dados key-value ────────────────────────
 
     private fun addSectionTitle(document: Document, title: String) {
         document.add(Paragraph(" "))
@@ -482,20 +687,41 @@ class PdfReportService(
         table.setWidths(floatArrayOf(35f, 65f))
 
         pairs.forEachIndexed { index, (key, value) ->
-            val bg = if (index % 2 == 0) Color.WHITE else LIGHT_BG
+            val sentiment = classifyValue(key, value)
+            val rowBg = if (index % 2 == 0) Color.WHITE else LIGHT_BG
 
             val keyCell = PdfPCell(Phrase(formatKey(key), font(8.5f, bold = true)))
-            keyCell.backgroundColor = bg
+            keyCell.backgroundColor = rowBg
             keyCell.setPadding(6f)
             keyCell.paddingLeft = 10f
             keyCell.borderColor = BORDER_COLOR
             keyCell.borderWidth = 0.5f
             table.addCell(keyCell)
 
-            // Colorir valores negativos
-            val valueColor = getValueColor(key, value)
-            val valCell = PdfPCell(Phrase(value, font(8.5f, color = valueColor)))
-            valCell.backgroundColor = bg
+            val valueBg: Color
+            val textColor: Color
+
+            when (sentiment) {
+                ValueSentiment.POSITIVE -> {
+                    valueBg = GREEN_BG
+                    textColor = GREEN
+                }
+                ValueSentiment.NEGATIVE -> {
+                    valueBg = RED_BG
+                    textColor = RED
+                }
+                ValueSentiment.WARNING -> {
+                    valueBg = YELLOW_BG
+                    textColor = YELLOW
+                }
+                ValueSentiment.NEUTRAL -> {
+                    valueBg = rowBg
+                    textColor = DARK_TEXT
+                }
+            }
+
+            val valCell = PdfPCell(Phrase(value, font(8.5f, color = textColor)))
+            valCell.backgroundColor = valueBg
             valCell.setPadding(6f)
             valCell.borderColor = BORDER_COLOR
             valCell.borderWidth = 0.5f
@@ -503,38 +729,6 @@ class PdfReportService(
         }
 
         document.add(table)
-    }
-
-    private fun getValueColor(key: String, value: String): Color {
-        val keyLower = key.lowercase()
-        val valueLower = value.lowercase()
-
-        // Valores positivos / limpos
-        if (valueLower.contains("nenhum") || valueLower.contains("sem ") ||
-            valueLower == "0" || valueLower == "nao informado" ||
-            valueLower.contains("nao existe") || valueLower.contains("sem ocorrencia")
-        ) {
-            // Só aplica verde se for campo de alerta
-            if (NEGATIVE_KEYWORDS.any { keyLower.contains(it) || valueLower.contains(it) }.not() &&
-                keyLower.contains("ocorrencia").not() && keyLower.contains("sinistro").not()
-            ) {
-                return DARK_TEXT
-            }
-        }
-
-        // Valores negativos / alertas
-        for (keyword in NEGATIVE_KEYWORDS) {
-            if (valueLower.contains(keyword)) return RED
-        }
-
-        // Campos de situação irregular
-        if ((keyLower.contains("situacao") || keyLower.contains("status")) &&
-            (valueLower.contains("irregular") || valueLower.contains("cancelad") || valueLower.contains("bloqueado"))
-        ) {
-            return RED
-        }
-
-        return DARK_TEXT
     }
 
     // ── Footer ─────────────────────────────────────────────────────
