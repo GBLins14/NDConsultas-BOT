@@ -41,7 +41,6 @@ class PdfReportService(
         private val LIGHT_BG = Color(245, 247, 250)
         private val BORDER_COLOR = Color(210, 215, 220)
 
-        // Alertas
         private val GREEN = Color(34, 139, 34)
         private val GREEN_BG = Color(232, 245, 233)
         private val GREEN_BORDER = Color(129, 199, 132)
@@ -52,7 +51,6 @@ class PdfReportService(
         private val YELLOW_BG = Color(255, 248, 225)
         private val YELLOW_BORDER = Color(255, 224, 130)
 
-        // Seções
         private val SECTION_BLUE = Color(227, 242, 253)
         private val SECTION_BLUE_BORDER = Color(100, 181, 246)
 
@@ -67,7 +65,6 @@ class PdfReportService(
 
         private const val MAX_REDIRECTS = 5
 
-        // Keywords para detectar alertas nos dados
         private val NEGATIVE_KEYWORDS = listOf(
             "roubo", "furto", "sinistro", "bloqueio", "penhora", "impedimento",
             "restricao", "restri\u00e7\u00e3o", "existe ocorrencia", "ocorrencia de sinistro",
@@ -75,13 +72,20 @@ class PdfReportService(
         )
     }
 
-    @Volatile
-    private var cachedLogo: ByteArray? = null
+    @Volatile private var cachedLogo: ByteArray? = null
+    @Volatile private var logoLoadAttempted = false
 
-    @Volatile
-    private var logoLoadAttempted = false
+    // ── Modelo de alerta por módulo ────────────────────────────────
 
-    // ── Data class para alertas ────────────────────────────────────
+    data class AlertDef(
+        val label: String,
+        val searchKeys: List<String>,
+        val detailKeys: List<String>,
+        val positiveText: String,
+        val negativeText: String,
+        val checkExisteOcorrencia: Boolean = false,
+        val checkQuantidade: String? = null
+    )
 
     data class AlertInfo(
         val label: String,
@@ -89,9 +93,44 @@ class PdfReportService(
         val detail: String
     )
 
+    private val moduleAlerts: Map<String, List<AlertDef>> = mapOf(
+        "placa_serpro" to listOf(
+            AlertDef("RESTRICOES", listOf("restricao", "restri\u00e7\u00e3o", "restricoes"), listOf("restricao", "restricoes"), "Sem restricoes", "Restricao encontrada"),
+            AlertDef("SITUACAO", listOf("situacao"), listOf("situacao", "situacao_veiculo"), "Veiculo regular", "Situacao irregular"),
+            AlertDef("COMUNICADO DE VENDA", listOf("comunicado_venda", "comunicado de venda"), listOf("comunicado_venda"), "Sem comunicado", "Comunicado de venda registrado"),
+            AlertDef("INTENCAO DE VENDA", listOf("intencao_venda", "intencao de venda"), listOf("intencao_venda"), "Sem intencao", "Intencao de venda registrada")
+        ),
+        "bin_chassi" to listOf(
+            AlertDef("SITUACAO", listOf("situacao"), listOf("situacao", "situacao_veiculo"), "Veiculo regular", "Situacao irregular")
+        ),
+        "bin_motor" to listOf(
+            AlertDef("SITUACAO", listOf("situacao"), listOf("situacao", "situacao_veiculo"), "Veiculo regular", "Situacao irregular")
+        ),
+        "bin_renavam" to listOf(
+            AlertDef("SITUACAO", listOf("situacao"), listOf("situacao", "situacao_veiculo"), "Veiculo regular", "Situacao irregular")
+        ),
+        "multas_senatran" to listOf(
+            AlertDef("MULTAS", listOf("multa", "infracao", "auto_infracao"), listOf("multa", "infracao"), "Sem multas registradas", "Multa(s) encontrada(s)")
+        ),
+        "ocorrencias_senatran" to listOf(
+            AlertDef("ROUBO / FURTO", listOf("roubo", "furto"), listOf("roubo", "furto", "tipo_ocorrencia"), "Nenhuma ocorrencia", "Ocorrencia encontrada"),
+            AlertDef("SINISTRO", listOf("sinistro", "indicio_sinistro"), listOf("descricao_ocorrencia"), "Sem indicio de sinistro", "Indicio de sinistro encontrado", checkExisteOcorrencia = true)
+        ),
+        "renajud_senatran" to listOf(
+            AlertDef("BLOQUEIO", listOf("bloqueio", "bloqueado"), listOf("bloqueio", "tipo_restricao"), "Sem bloqueio judicial", "Bloqueio judicial encontrado"),
+            AlertDef("PENHORA", listOf("penhora"), listOf("penhora", "tipo_restricao"), "Sem penhora", "Penhora encontrada"),
+            AlertDef("IMPEDIMENTO", listOf("impedimento"), listOf("impedimento", "tipo_restricao"), "Sem impedimento", "Impedimento encontrado")
+        ),
+        "leilao_completo_score" to listOf(
+            AlertDef("SINISTRO", listOf("sinistro", "indicio_sinistro"), listOf("descricao_ocorrencia"), "Sem indicio de sinistro", "Indicio de sinistro encontrado", checkExisteOcorrencia = true),
+            AlertDef("LEILAO", listOf("leilao", "leiloeiro", "comitente"), listOf(), "Sem historico de leilao", "", checkQuantidade = "quantidade_ocorrencias"),
+            AlertDef("SCORE", listOf("pontuacao", "score"), listOf("pontuacao", "descricao_pontuacao"), "Score disponivel", "Score disponivel")
+        )
+    )
+
     // ── Geração principal ─────────────────────────────────────────
 
-    fun generate(tipoLabel: String, query: String, data: Map<String, Any?>): ByteArray {
+    fun generate(tipo: String, tipoLabel: String, query: String, data: Map<String, Any?>): ByteArray {
         val output = ByteArrayOutputStream()
         val document = Document(PageSize.A4, 36f, 36f, 36f, 36f)
         PdfWriter.getInstance(document, output)
@@ -100,9 +139,12 @@ class PdfReportService(
         addHeader(document)
         addConsultationInfo(document, tipoLabel, query)
 
-        val alerts = extractAlerts(data)
-        if (alerts.isNotEmpty()) {
-            addAlertPanel(document, alerts)
+        val alertDefs = moduleAlerts[tipo]
+        if (alertDefs != null && alertDefs.isNotEmpty()) {
+            val alerts = evaluateAlerts(alertDefs, data)
+            if (alerts.isNotEmpty()) {
+                addAlertPanel(document, alerts)
+            }
         }
 
         addResultSections(document, data)
@@ -112,17 +154,59 @@ class PdfReportService(
         return output.toByteArray()
     }
 
+    // ── Avaliação de alertas por definição ─────────────────────────
+
+    private fun evaluateAlerts(defs: List<AlertDef>, data: Map<String, Any?>): List<AlertInfo> {
+        return defs.map { def ->
+            val isAlert: Boolean
+            val detail: String
+
+            when {
+                def.checkQuantidade != null -> {
+                    val qty = findRawValue(data, def.checkQuantidade)
+                    val hasData = (qty != null && qty != "0") || searchInData(data, def.searchKeys)
+                    isAlert = hasData
+                    detail = if (hasData) "${qty ?: "?"} ocorrencia(s) de leilao" else def.positiveText
+                }
+                def.checkExisteOcorrencia -> {
+                    val existe = findRawValue(data, "existe_ocorrencia")
+                    val hasSinistro = existe == "1" || searchInData(data, def.searchKeys)
+                    isAlert = hasSinistro
+                    val detailValue = findValueForKeys(data, def.detailKeys)
+                    detail = if (hasSinistro) detailValue ?: def.negativeText else def.positiveText
+                }
+                def.label == "SCORE" -> {
+                    val pontuacao = findRawValue(data, "pontuacao")
+                    val descricao = findRawValue(data, "descricao_pontuacao")
+                    val aceitacao = findRawValue(data, "aceitacao")
+                    isAlert = false
+                    detail = buildString {
+                        if (pontuacao != null) append("Nota: $pontuacao")
+                        if (aceitacao != null) {
+                            if (isNotEmpty()) append(" | ")
+                            append("Aceitacao: $aceitacao%")
+                        }
+                        if (isEmpty()) append(descricao ?: def.positiveText)
+                    }
+                }
+                else -> {
+                    val found = searchInData(data, def.searchKeys)
+                    isAlert = found
+                    val detailValue = findValueForKeys(data, def.detailKeys)
+                    detail = if (found) detailValue ?: def.negativeText else def.positiveText
+                }
+            }
+
+            AlertInfo(label = def.label, isAlert = isAlert, detail = detail)
+        }
+    }
+
     // ── Header com Logo ───────────────────────────────────────────
 
     private fun addHeader(document: Document) {
         val logoBytes = getLogoBytes()
-
-        if (logoBytes != null) {
-            addHeaderWithLogo(document, logoBytes)
-        } else {
-            addHeaderWithoutLogo(document)
-        }
-
+        if (logoBytes != null) addHeaderWithLogo(document, logoBytes)
+        else addHeaderWithoutLogo(document)
         document.add(Paragraph(" "))
     }
 
@@ -182,7 +266,6 @@ class PdfReportService(
 
         table.addCell(cell)
         document.add(table)
-
         addAccentBar(document)
     }
 
@@ -235,75 +318,16 @@ class PdfReportService(
 
     // ── Painel de alertas visuais ──────────────────────────────────
 
-    private fun extractAlerts(data: Map<String, Any?>): List<AlertInfo> {
-        val alerts = mutableListOf<AlertInfo>()
-
-        // Roubo / Furto
-        val hasRouboFurto = searchInData(data, listOf("roubo", "furto"))
-        val routeDetail = findValueForKeys(data, listOf("roubo", "furto", "tipo_ocorrencia", "tipo de ocorrencia"))
-        alerts.add(
-            AlertInfo(
-                label = "ROUBO / FURTO",
-                isAlert = hasRouboFurto,
-                detail = if (hasRouboFurto) routeDetail ?: "Ocorrencia encontrada" else "Nenhuma ocorrencia"
-            )
-        )
-
-        // Sinistro
-        val existeSinistro = findRawValue(data, "existe_ocorrencia")
-        val hasSinistro = existeSinistro == "1" || searchInData(data, listOf("sinistro", "indicio_sinistro", "indicio sinistro"))
-        val sinistroDetail = findValueForKeys(data, listOf("descricao_ocorrencia", "descricao ocorrencia"))
-        alerts.add(
-            AlertInfo(
-                label = "SINISTRO",
-                isAlert = hasSinistro,
-                detail = if (hasSinistro) sinistroDetail ?: "Indicio de sinistro encontrado" else "Sem indicio de sinistro"
-            )
-        )
-
-        // Restricoes
-        val hasRestricao = searchInData(data, listOf("restricao", "restri\u00e7\u00e3o", "bloqueio", "penhora", "impedimento", "renajud"))
-        val restricaoDetail = findValueForKeys(data, listOf("restricao", "restri\u00e7\u00e3o", "restricoes", "tipo_restricao"))
-        alerts.add(
-            AlertInfo(
-                label = "RESTRICOES",
-                isAlert = hasRestricao,
-                detail = if (hasRestricao) restricaoDetail ?: "Restricao encontrada" else "Sem restricoes"
-            )
-        )
-
-        // Leilao
-        val qtdOcorrencias = findRawValue(data, "quantidade_ocorrencias")
-        val hasLeilao = (qtdOcorrencias != null && qtdOcorrencias != "0") || searchInData(data, listOf("leilao", "leiloeiro", "comitente"))
-        alerts.add(
-            AlertInfo(
-                label = "LEILAO",
-                isAlert = hasLeilao,
-                detail = if (hasLeilao) "${qtdOcorrencias ?: "?"} ocorrencia(s) de leilao" else "Sem historico de leilao"
-            )
-        )
-
-        // Multas
-        val hasMultas = searchInData(data, listOf("multa", "infracao", "infra\u00e7\u00e3o", "auto_infracao"))
-        alerts.add(
-            AlertInfo(
-                label = "MULTAS",
-                isAlert = hasMultas,
-                detail = if (hasMultas) "Multa(s) encontrada(s)" else "Sem multas registradas"
-            )
-        )
-
-        return alerts
-    }
-
     private fun addAlertPanel(document: Document, alerts: List<AlertInfo>) {
-        // Titulo do painel
         val panelTitle = Paragraph("Situacao do Veiculo", font(12f, bold = true, color = PRIMARY))
         panelTitle.spacingAfter = 6f
         document.add(panelTitle)
 
-        // Grid de alertas: 2 ou 3 colunas
-        val cols = if (alerts.size <= 4) 2 else 3
+        val cols = when {
+            alerts.size == 1 -> 1
+            alerts.size <= 4 -> 2
+            else -> 3
+        }
         val table = PdfPTable(cols)
         table.widthPercentage = 100f
 
@@ -313,16 +337,25 @@ class PdfReportService(
             val textColor: Color
             val icon: String
 
-            if (alert.isAlert) {
-                bgColor = RED_BG
-                borderColor = RED_BORDER
-                textColor = RED
-                icon = "\u2716"  // ✖
-            } else {
-                bgColor = GREEN_BG
-                borderColor = GREEN_BORDER
-                textColor = GREEN
-                icon = "\u2714"  // ✔
+            when {
+                alert.label == "SCORE" -> {
+                    bgColor = SECTION_BLUE
+                    borderColor = SECTION_BLUE_BORDER
+                    textColor = PRIMARY_DARK
+                    icon = "\u2605"  // ★
+                }
+                alert.isAlert -> {
+                    bgColor = RED_BG
+                    borderColor = RED_BORDER
+                    textColor = RED
+                    icon = "\u2716"  // ✖
+                }
+                else -> {
+                    bgColor = GREEN_BG
+                    borderColor = GREEN_BORDER
+                    textColor = GREEN
+                    icon = "\u2714"  // ✔
+                }
             }
 
             val phrase = Phrase()
@@ -343,7 +376,6 @@ class PdfReportService(
             table.addCell(cell)
         }
 
-        // Preencher celulas restantes se nao for multiplo do numero de colunas
         val remainder = alerts.size % cols
         if (remainder != 0) {
             for (i in 0 until (cols - remainder)) {
@@ -355,7 +387,6 @@ class PdfReportService(
 
         document.add(table)
 
-        // Separador
         val separator = PdfPTable(1)
         separator.widthPercentage = 100f
         val sepCell = PdfPCell(Phrase(" "))
@@ -383,12 +414,8 @@ class PdfReportService(
 
         collapsed.forEach { (key, value) ->
             when {
-                value is Map<*, *> && value.isNotEmpty() -> {
-                    sections.add(Triple(key, formatKey(key), value))
-                }
-                value is List<*> && value.isNotEmpty() && value.first() is Map<*, *> -> {
-                    sections.add(Triple(key, formatKey(key), value))
-                }
+                value is Map<*, *> && value.isNotEmpty() -> sections.add(Triple(key, formatKey(key), value))
+                value is List<*> && value.isNotEmpty() && value.first() is Map<*, *> -> sections.add(Triple(key, formatKey(key), value))
                 else -> simplePairs.add(key to value)
             }
         }
@@ -406,11 +433,8 @@ class PdfReportService(
                     renderSectionData(document, value as Map<String, Any?>)
                 }
                 is List<*> -> {
-                    @Suppress("UNCHECKED_CAST")
                     val items = value.filterIsInstance<Map<String, Any?>>()
-                    if (items.isNotEmpty()) {
-                        addGroupedTable(document, items)
-                    }
+                    if (items.isNotEmpty()) addGroupedTable(document, items)
                 }
             }
         }
@@ -430,9 +454,7 @@ class PdfReportService(
             }
         }
 
-        if (simplePairs.isNotEmpty()) {
-            addDataTable(document, simplePairs)
-        }
+        if (simplePairs.isNotEmpty()) addDataTable(document, simplePairs)
 
         for ((_, label, value) in subSections) {
             when (value) {
@@ -443,21 +465,17 @@ class PdfReportService(
                 }
                 is List<*> -> {
                     addSubSectionTitle(document, label)
-                    @Suppress("UNCHECKED_CAST")
                     val items = value.filterIsInstance<Map<String, Any?>>()
-                    if (items.isNotEmpty()) {
-                        addGroupedTable(document, items)
-                    }
+                    if (items.isNotEmpty()) addGroupedTable(document, items)
                 }
             }
         }
     }
 
-    // ── Colapsar {codigo, descricao} e sub-maps simples ───────────
+    // ── Colapsar {codigo, descricao} ──────────────────────────────
 
     private fun collapseData(data: Map<String, Any?>): Map<String, Any?> {
         val result = linkedMapOf<String, Any?>()
-
         data.forEach { (key, value) ->
             when {
                 value is Map<*, *> && isCodigoDescricao(value) -> {
@@ -503,7 +521,6 @@ class PdfReportService(
     private fun addGroupedTable(document: Document, items: List<Map<String, Any?>>) {
         if (items.isEmpty()) return
 
-        // Coletar todas as colunas (excluir sub-maps e listas de maps)
         val columns = linkedSetOf<String>()
         for (item in items) {
             for ((key, value) in item) {
@@ -514,23 +531,19 @@ class PdfReportService(
         }
 
         if (columns.isEmpty()) {
-            // Fallback: tudo é sub-map, render como flat
             items.forEachIndexed { index, item ->
                 addSubSectionTitle(document, "[${index + 1}]")
-                val flat = flattenMap(item, "")
-                addDataTable(document, flat)
+                addDataTable(document, flattenMap(item, ""))
             }
             return
         }
 
-        // Limitar colunas para caber no PDF (máx 6 colunas visíveis)
         val visibleColumns = columns.toList().take(8)
         val colCount = visibleColumns.size
 
         val table = PdfPTable(colCount)
         table.widthPercentage = 100f
 
-        // Header
         for (col in visibleColumns) {
             val cell = PdfPCell(Phrase(formatKey(col), font(7.5f, bold = true, color = Color.WHITE)))
             cell.backgroundColor = PRIMARY_DARK
@@ -542,35 +555,20 @@ class PdfReportService(
             table.addCell(cell)
         }
 
-        // Rows
         items.forEachIndexed { rowIndex, item ->
             val rowBg = if (rowIndex % 2 == 0) Color.WHITE else LIGHT_BG
 
             for (col in visibleColumns) {
-                val rawValue = item[col]
-                val text = formatValue(rawValue)
+                val text = formatValue(item[col])
                 val sentiment = classifyValue(col, text)
 
                 val cellBg: Color
                 val textColor: Color
-
                 when (sentiment) {
-                    ValueSentiment.POSITIVE -> {
-                        cellBg = GREEN_BG
-                        textColor = GREEN
-                    }
-                    ValueSentiment.NEGATIVE -> {
-                        cellBg = RED_BG
-                        textColor = RED
-                    }
-                    ValueSentiment.WARNING -> {
-                        cellBg = YELLOW_BG
-                        textColor = YELLOW
-                    }
-                    ValueSentiment.NEUTRAL -> {
-                        cellBg = rowBg
-                        textColor = DARK_TEXT
-                    }
+                    ValueSentiment.POSITIVE -> { cellBg = GREEN_BG; textColor = GREEN }
+                    ValueSentiment.NEGATIVE -> { cellBg = RED_BG; textColor = RED }
+                    ValueSentiment.WARNING -> { cellBg = YELLOW_BG; textColor = YELLOW }
+                    ValueSentiment.NEUTRAL -> { cellBg = rowBg; textColor = DARK_TEXT }
                 }
 
                 val cell = PdfPCell(Phrase(text, font(7f, color = textColor)))
@@ -587,7 +585,6 @@ class PdfReportService(
 
         document.add(table)
 
-        // Se houver sub-maps dentro dos items que nao couberam na tabela, renderizar abaixo
         items.forEachIndexed { index, item ->
             val subMaps = item.filter { (key, value) ->
                 key !in visibleColumns && (value is Map<*, *> || (value is List<*> && value.firstOrNull() is Map<*, *>))
@@ -599,7 +596,7 @@ class PdfReportService(
         }
     }
 
-    // ── Classificação de sentimento dos valores ───────────────────
+    // ── Classificação de sentimento ───────────────────────────────
 
     private enum class ValueSentiment { POSITIVE, NEGATIVE, WARNING, NEUTRAL }
 
@@ -607,7 +604,6 @@ class PdfReportService(
         val keyLower = key.lowercase()
         val valueLower = value.lowercase()
 
-        // Campos que são indicadores de status/situação
         val isStatusField = keyLower.contains("situacao") || keyLower.contains("condicao") ||
             keyLower.contains("status") || keyLower.contains("ocorrencia") ||
             keyLower.contains("sinistro") || keyLower.contains("restricao") ||
@@ -618,46 +614,34 @@ class PdfReportService(
 
         if (!isStatusField) return ValueSentiment.NEUTRAL
 
-        // Negativo
         for (keyword in NEGATIVE_KEYWORDS) {
             if (valueLower.contains(keyword)) return ValueSentiment.NEGATIVE
         }
         if (valueLower.contains("irregular") || valueLower.contains("cancelad") ||
             valueLower.contains("bloqueado") || valueLower.contains("existe ocorrencia")
-        ) {
+        ) return ValueSentiment.NEGATIVE
+        if (keyLower.contains("existe") && (valueLower == "1" || valueLower == "sim" || valueLower == "true"))
             return ValueSentiment.NEGATIVE
-        }
-        if (keyLower.contains("existe") && (valueLower == "1" || valueLower == "sim" || valueLower == "true")) {
-            return ValueSentiment.NEGATIVE
-        }
 
-        // Warning
         if (valueLower.contains("verificar") || valueLower.contains("n/c") ||
             valueLower.contains("nao informado") || valueLower.contains("nao divulgado")
-        ) {
-            return ValueSentiment.WARNING
-        }
+        ) return ValueSentiment.WARNING
 
-        // Positivo
         if (valueLower.contains("sucesso") || valueLower.contains("regular") ||
             valueLower.contains("nenhum") || valueLower.contains("sem ") ||
             valueLower.contains("nao existe") || valueLower.contains("livre") ||
             valueLower.contains("sem restricao") || valueLower.contains("normal")
-        ) {
+        ) return ValueSentiment.POSITIVE
+        if (keyLower.contains("existe") && (valueLower == "0" || valueLower == "nao" || valueLower == "false"))
             return ValueSentiment.POSITIVE
-        }
-        if (keyLower.contains("existe") && (valueLower == "0" || valueLower == "nao" || valueLower == "false")) {
-            return ValueSentiment.POSITIVE
-        }
 
         return ValueSentiment.NEUTRAL
     }
 
-    // ── Títulos e tabela de dados key-value ────────────────────────
+    // ── Títulos e tabela key-value ─────────────────────────────────
 
     private fun addSectionTitle(document: Document, title: String) {
         document.add(Paragraph(" "))
-
         val table = PdfPTable(1)
         table.widthPercentage = 100f
 
@@ -701,24 +685,11 @@ class PdfReportService(
 
             val valueBg: Color
             val textColor: Color
-
             when (sentiment) {
-                ValueSentiment.POSITIVE -> {
-                    valueBg = GREEN_BG
-                    textColor = GREEN
-                }
-                ValueSentiment.NEGATIVE -> {
-                    valueBg = RED_BG
-                    textColor = RED
-                }
-                ValueSentiment.WARNING -> {
-                    valueBg = YELLOW_BG
-                    textColor = YELLOW
-                }
-                ValueSentiment.NEUTRAL -> {
-                    valueBg = rowBg
-                    textColor = DARK_TEXT
-                }
+                ValueSentiment.POSITIVE -> { valueBg = GREEN_BG; textColor = GREEN }
+                ValueSentiment.NEGATIVE -> { valueBg = RED_BG; textColor = RED }
+                ValueSentiment.WARNING -> { valueBg = YELLOW_BG; textColor = YELLOW }
+                ValueSentiment.NEUTRAL -> { valueBg = rowBg; textColor = DARK_TEXT }
             }
 
             val valCell = PdfPCell(Phrase(value, font(8.5f, color = textColor)))
@@ -777,27 +748,19 @@ class PdfReportService(
             for (keyword in keywords) {
                 if (keyLower.contains(keyword)) {
                     val strVal = value?.toString()?.lowercase() ?: ""
-                    // Não considerar "0", "nao", "nenhum", "sem" como positivos
                     if (strVal != "0" && strVal != "false" && !strVal.startsWith("nao ") &&
                         !strVal.startsWith("nenhum") && !strVal.startsWith("sem ") && strVal.isNotBlank()
-                    ) {
-                        return true
-                    }
+                    ) return true
                 }
             }
-            // Buscar nos valores também
             val strVal = value?.toString()?.lowercase() ?: ""
             for (keyword in keywords) {
                 if (strVal.contains(keyword) && strVal != "0" && strVal != "false") {
-                    // Verificar se nao é negação
                     if (!strVal.contains("nao existe") && !strVal.contains("sem $keyword") &&
                         !strVal.contains("nenhum") && !strVal.startsWith("sem ")
-                    ) {
-                        return true
-                    }
+                    ) return true
                 }
             }
-            // Recursão em sub-maps
             if (value is Map<*, *>) {
                 @Suppress("UNCHECKED_CAST")
                 if (searchInData(value as Map<String, Any?>, keywords)) return true
@@ -816,9 +779,7 @@ class PdfReportService(
 
     private fun findRawValue(data: Map<String, Any?>, targetKey: String): String? {
         for ((key, value) in data) {
-            if (key.equals(targetKey, ignoreCase = true)) {
-                return value?.toString()?.trim()?.ifBlank { null }
-            }
+            if (key.equals(targetKey, ignoreCase = true)) return value?.toString()?.trim()?.ifBlank { null }
             if (value is Map<*, *>) {
                 @Suppress("UNCHECKED_CAST")
                 val found = findRawValue(value as Map<String, Any?>, targetKey)
@@ -854,7 +815,6 @@ class PdfReportService(
         synchronized(this) {
             if (cachedLogo != null) return cachedLogo
             if (logoLoadAttempted) return null
-
             logoLoadAttempted = true
 
             val url = botProperties.logoUrl
@@ -894,48 +854,31 @@ class PdfReportService(
 
             try {
                 val code = connection.responseCode
-
                 if (code in 300..399) {
                     val location = connection.getHeaderField("Location")
-                    if (location.isNullOrBlank()) {
-                        log.warn("Redirect sem Location header: {}", currentUrl)
-                        return null
-                    }
+                    if (location.isNullOrBlank()) return null
                     currentUrl = if (location.startsWith("http")) location
                     else URI(currentUrl).resolve(location).toString()
                     redirects++
                     continue
                 }
-
-                if (code != 200) {
-                    log.warn("Logo download retornou HTTP {}: {}", code, currentUrl)
-                    return null
-                }
-
+                if (code != 200) return null
                 val contentType = connection.contentType ?: ""
-                if (!contentType.startsWith("image/")) {
-                    log.warn("Logo URL nao retornou imagem (content-type: {}): {}", contentType, currentUrl)
-                    return null
-                }
-
+                if (!contentType.startsWith("image/")) return null
                 return connection.inputStream.use { it.readBytes() }
             } finally {
                 connection.disconnect()
             }
         }
-
-        log.warn("Muitos redirects ao baixar logo: {}", urlString)
         return null
     }
 
     // ── Utilities ──────────────────────────────────────────────────
 
     private fun formatKey(key: String): String {
-        return key.replace("_", " ")
-            .split(" ")
-            .joinToString(" ") { word ->
-                word.replaceFirstChar { it.uppercase() }
-            }
+        return key.replace("_", " ").split(" ").joinToString(" ") { word ->
+            word.replaceFirstChar { it.uppercase() }
+        }
     }
 
     private fun formatValue(value: Any?): String {

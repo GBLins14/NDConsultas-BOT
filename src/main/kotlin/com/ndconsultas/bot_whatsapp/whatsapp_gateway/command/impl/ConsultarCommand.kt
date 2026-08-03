@@ -556,7 +556,7 @@ class ConsultarCommand(
         data: Map<String, Any?>
     ): Boolean {
         return try {
-            val pdfBytes = pdfService.generate(info.label, query, data)
+            val pdfBytes = pdfService.generate(tipo, info.label, query, data)
             val timestamp = LocalDateTime.now().format(FILE_DATE_FMT)
             val filename = "consulta_${tipo}_${timestamp}.pdf"
 
