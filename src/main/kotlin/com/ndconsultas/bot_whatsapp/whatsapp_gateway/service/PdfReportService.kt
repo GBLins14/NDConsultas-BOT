@@ -30,6 +30,7 @@ class PdfReportService(
     companion object {
         private val log = LoggerFactory.getLogger(PdfReportService::class.java)
 
+        // ── Paleta de cores ───────────────────────────────────────
         private val PRIMARY = Color(0, 82, 155)
         private val PRIMARY_DARK = Color(0, 60, 120)
         private val ACCENT = Color(0, 150, 136)
@@ -38,8 +39,22 @@ class PdfReportService(
         private val LIGHT_GRAY = Color(150, 150, 150)
         private val LIGHT_BG = Color(245, 247, 250)
         private val BORDER_COLOR = Color(210, 215, 220)
-        private val HEADER_GRADIENT_TOP = Color(0, 82, 155)
-        private val HEADER_GRADIENT_BOTTOM = Color(0, 55, 110)
+
+        // Alertas
+        private val GREEN = Color(34, 139, 34)
+        private val GREEN_BG = Color(232, 245, 233)
+        private val GREEN_BORDER = Color(129, 199, 132)
+        private val RED = Color(198, 40, 40)
+        private val RED_BG = Color(255, 235, 238)
+        private val RED_BORDER = Color(239, 154, 154)
+        private val YELLOW = Color(245, 166, 35)
+        private val YELLOW_BG = Color(255, 248, 225)
+        private val YELLOW_BORDER = Color(255, 224, 130)
+
+        // Seções
+        private val SECTION_BLUE = Color(227, 242, 253)
+        private val SECTION_BLUE_BORDER = Color(100, 181, 246)
+
         private val DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")
 
         private val baseFont = BaseFont.createFont(BaseFont.HELVETICA, BaseFont.CP1252, BaseFont.NOT_EMBEDDED)
@@ -50,6 +65,13 @@ class PdfReportService(
         }
 
         private const val MAX_REDIRECTS = 5
+
+        // Keywords para detectar alertas nos dados
+        private val NEGATIVE_KEYWORDS = listOf(
+            "roubo", "furto", "sinistro", "bloqueio", "penhora", "impedimento",
+            "restricao", "restri\u00e7\u00e3o", "existe ocorrencia", "ocorrencia de sinistro",
+            "existe_ocorrencia", "indicio", "irregular", "cancelad"
+        )
     }
 
     @Volatile
@@ -57,6 +79,16 @@ class PdfReportService(
 
     @Volatile
     private var logoLoadAttempted = false
+
+    // ── Data class para alertas ────────────────────────────────────
+
+    data class AlertInfo(
+        val label: String,
+        val isAlert: Boolean,
+        val detail: String
+    )
+
+    // ── Geração principal ─────────────────────────────────────────
 
     fun generate(tipoLabel: String, query: String, data: Map<String, Any?>): ByteArray {
         val output = ByteArrayOutputStream()
@@ -66,7 +98,13 @@ class PdfReportService(
         document.open()
         addHeader(document)
         addConsultationInfo(document, tipoLabel, query)
-        addResultsTable(document, data)
+
+        val alerts = extractAlerts(data)
+        if (alerts.isNotEmpty()) {
+            addAlertPanel(document, alerts)
+        }
+
+        addResultSections(document, data)
         addFooter(document)
         document.close()
 
@@ -90,12 +128,11 @@ class PdfReportService(
     private fun addHeaderWithLogo(document: Document, logoBytes: ByteArray) {
         val headerTable = PdfPTable(2)
         headerTable.widthPercentage = 100f
-        headerTable.setWidths(floatArrayOf(20f, 80f))
+        headerTable.setWidths(floatArrayOf(15f, 85f))
 
-        // Logo cell
         val logoCell = try {
             val img = Image.getInstance(logoBytes)
-            img.scaleToFit(60f, 60f)
+            img.scaleToFit(55f, 55f)
             val cell = PdfPCell(img, false)
             cell.horizontalAlignment = Element.ALIGN_CENTER
             cell.verticalAlignment = Element.ALIGN_MIDDLE
@@ -104,19 +141,18 @@ class PdfReportService(
             log.warn("Falha ao processar logo para PDF: {}", e.message)
             PdfPCell(Phrase(""))
         }
-        logoCell.backgroundColor = HEADER_GRADIENT_TOP
+        logoCell.backgroundColor = PRIMARY_DARK
         logoCell.border = Rectangle.NO_BORDER
         logoCell.setPadding(12f)
         logoCell.paddingLeft = 16f
         headerTable.addCell(logoCell)
 
-        // Title cell
         val titlePhrase = Phrase()
-        titlePhrase.add(Phrase("ND CONSULTAS\n", font(18f, bold = true, color = Color.WHITE)))
-        titlePhrase.add(Phrase("VEICULARES", font(14f, bold = false, color = Color(180, 210, 240))))
+        titlePhrase.add(Phrase("ND CONSULTAS\n", font(20f, bold = true, color = Color.WHITE)))
+        titlePhrase.add(Phrase("VEICULARES", font(12f, bold = false, color = Color(180, 210, 240))))
 
         val titleCell = PdfPCell(titlePhrase)
-        titleCell.backgroundColor = HEADER_GRADIENT_TOP
+        titleCell.backgroundColor = PRIMARY_DARK
         titleCell.border = Rectangle.NO_BORDER
         titleCell.horizontalAlignment = Element.ALIGN_LEFT
         titleCell.verticalAlignment = Element.ALIGN_MIDDLE
@@ -125,8 +161,6 @@ class PdfReportService(
         headerTable.addCell(titleCell)
 
         document.add(headerTable)
-
-        // Accent bar
         addAccentBar(document)
     }
 
@@ -135,14 +169,14 @@ class PdfReportService(
         table.widthPercentage = 100f
 
         val cell = PdfPCell()
-        cell.backgroundColor = HEADER_GRADIENT_TOP
+        cell.backgroundColor = PRIMARY_DARK
         cell.border = Rectangle.NO_BORDER
         cell.setPadding(18f)
         cell.horizontalAlignment = Element.ALIGN_CENTER
 
         val titlePhrase = Phrase()
-        titlePhrase.add(Phrase("ND CONSULTAS ", font(18f, bold = true, color = Color.WHITE)))
-        titlePhrase.add(Phrase("VEICULARES", font(18f, bold = false, color = Color(180, 210, 240))))
+        titlePhrase.add(Phrase("ND CONSULTAS ", font(20f, bold = true, color = Color.WHITE)))
+        titlePhrase.add(Phrase("VEICULARES", font(20f, bold = false, color = Color(180, 210, 240))))
         cell.phrase = titlePhrase
 
         table.addCell(cell)
@@ -183,18 +217,6 @@ class PdfReportService(
 
         document.add(infoTable)
         document.add(Paragraph(" "))
-
-        // Separator
-        val separator = PdfPTable(1)
-        separator.widthPercentage = 100f
-        val sepCell = PdfPCell(Phrase(" "))
-        sepCell.border = Rectangle.BOTTOM
-        sepCell.borderColor = PRIMARY
-        sepCell.borderWidth = 2f
-        sepCell.fixedHeight = 4f
-        separator.addCell(sepCell)
-        document.add(separator)
-        document.add(Paragraph(" "))
     }
 
     private fun addInfoRow(table: PdfPTable, label: String, value: String) {
@@ -210,40 +232,271 @@ class PdfReportService(
         table.addCell(valueCell)
     }
 
-    // ── Results Table ──────────────────────────────────────────────
+    // ── Painel de alertas visuais ──────────────────────────────────
 
-    private fun addResultsTable(document: Document, data: Map<String, Any?>) {
-        val sectionTitle = Paragraph("Resultado da Consulta", font(12f, bold = true, color = PRIMARY))
-        sectionTitle.spacingAfter = 8f
-        document.add(sectionTitle)
+    private fun extractAlerts(data: Map<String, Any?>): List<AlertInfo> {
+        val alerts = mutableListOf<AlertInfo>()
 
+        // Roubo / Furto
+        val hasRouboFurto = searchInData(data, listOf("roubo", "furto"))
+        val routeDetail = findValueForKeys(data, listOf("roubo", "furto", "tipo_ocorrencia", "tipo de ocorrencia"))
+        alerts.add(
+            AlertInfo(
+                label = "ROUBO / FURTO",
+                isAlert = hasRouboFurto,
+                detail = if (hasRouboFurto) routeDetail ?: "Ocorrencia encontrada" else "Nenhuma ocorrencia"
+            )
+        )
+
+        // Sinistro
+        val existeSinistro = findRawValue(data, "existe_ocorrencia")
+        val hasSinistro = existeSinistro == "1" || searchInData(data, listOf("sinistro", "indicio_sinistro", "indicio sinistro"))
+        val sinistroDetail = findValueForKeys(data, listOf("descricao_ocorrencia", "descricao ocorrencia"))
+        alerts.add(
+            AlertInfo(
+                label = "SINISTRO",
+                isAlert = hasSinistro,
+                detail = if (hasSinistro) sinistroDetail ?: "Indicio de sinistro encontrado" else "Sem indicio de sinistro"
+            )
+        )
+
+        // Restricoes
+        val hasRestricao = searchInData(data, listOf("restricao", "restri\u00e7\u00e3o", "bloqueio", "penhora", "impedimento", "renajud"))
+        val restricaoDetail = findValueForKeys(data, listOf("restricao", "restri\u00e7\u00e3o", "restricoes", "tipo_restricao"))
+        alerts.add(
+            AlertInfo(
+                label = "RESTRICOES",
+                isAlert = hasRestricao,
+                detail = if (hasRestricao) restricaoDetail ?: "Restricao encontrada" else "Sem restricoes"
+            )
+        )
+
+        // Leilao
+        val qtdOcorrencias = findRawValue(data, "quantidade_ocorrencias")
+        val hasLeilao = (qtdOcorrencias != null && qtdOcorrencias != "0") || searchInData(data, listOf("leilao", "leiloeiro", "comitente"))
+        alerts.add(
+            AlertInfo(
+                label = "LEILAO",
+                isAlert = hasLeilao,
+                detail = if (hasLeilao) "${qtdOcorrencias ?: "?"} ocorrencia(s) de leilao" else "Sem historico de leilao"
+            )
+        )
+
+        // Multas
+        val hasMultas = searchInData(data, listOf("multa", "infracao", "infra\u00e7\u00e3o", "auto_infracao"))
+        alerts.add(
+            AlertInfo(
+                label = "MULTAS",
+                isAlert = hasMultas,
+                detail = if (hasMultas) "Multa(s) encontrada(s)" else "Sem multas registradas"
+            )
+        )
+
+        return alerts
+    }
+
+    private fun addAlertPanel(document: Document, alerts: List<AlertInfo>) {
+        // Titulo do painel
+        val panelTitle = Paragraph("Situacao do Veiculo", font(12f, bold = true, color = PRIMARY))
+        panelTitle.spacingAfter = 6f
+        document.add(panelTitle)
+
+        // Grid de alertas: 2 ou 3 colunas
+        val cols = if (alerts.size <= 4) 2 else 3
+        val table = PdfPTable(cols)
+        table.widthPercentage = 100f
+
+        for (alert in alerts) {
+            val bgColor: Color
+            val borderColor: Color
+            val textColor: Color
+            val icon: String
+
+            if (alert.isAlert) {
+                bgColor = RED_BG
+                borderColor = RED_BORDER
+                textColor = RED
+                icon = "\u2716"  // ✖
+            } else {
+                bgColor = GREEN_BG
+                borderColor = GREEN_BORDER
+                textColor = GREEN
+                icon = "\u2714"  // ✔
+            }
+
+            val phrase = Phrase()
+            phrase.add(Phrase("$icon ", font(14f, bold = true, color = textColor)))
+            phrase.add(Phrase("${alert.label}\n", font(8.5f, bold = true, color = textColor)))
+            phrase.add(Phrase(alert.detail, font(7f, color = GRAY_TEXT)))
+
+            val cell = PdfPCell(phrase)
+            cell.backgroundColor = bgColor
+            cell.borderColor = borderColor
+            cell.borderWidth = 1.5f
+            cell.setPadding(8f)
+            cell.paddingTop = 10f
+            cell.paddingBottom = 10f
+            cell.horizontalAlignment = Element.ALIGN_CENTER
+            cell.verticalAlignment = Element.ALIGN_MIDDLE
+            cell.minimumHeight = 55f
+            table.addCell(cell)
+        }
+
+        // Preencher celulas restantes se nao for multiplo do numero de colunas
+        val remainder = alerts.size % cols
+        if (remainder != 0) {
+            for (i in 0 until (cols - remainder)) {
+                val emptyCell = PdfPCell(Phrase(""))
+                emptyCell.border = Rectangle.NO_BORDER
+                table.addCell(emptyCell)
+            }
+        }
+
+        document.add(table)
+
+        // Separador
+        val separator = PdfPTable(1)
+        separator.widthPercentage = 100f
+        val sepCell = PdfPCell(Phrase(" "))
+        sepCell.border = Rectangle.BOTTOM
+        sepCell.borderColor = PRIMARY
+        sepCell.borderWidth = 2f
+        sepCell.fixedHeight = 4f
+        separator.addCell(sepCell)
+        document.add(separator)
+        document.add(Paragraph(" "))
+    }
+
+    // ── Resultado por seções ──────────────────────────────────────
+
+    private fun addResultSections(document: Document, data: Map<String, Any?>) {
         if (data.isEmpty()) {
             document.add(Paragraph("Nenhum dado retornado para esta consulta.", font(10f, color = GRAY_TEXT)))
             return
         }
 
+        // Separar dados em seções (maps de nível top-level) vs campos simples
+        val simplePairs = mutableListOf<Pair<String, Any?>>()
+        val sections = mutableListOf<Triple<String, String, Map<String, Any?>>>() // key, label, data
+
+        data.forEach { (key, value) ->
+            when {
+                value is Map<*, *> && value.isNotEmpty() -> {
+                    @Suppress("UNCHECKED_CAST")
+                    sections.add(Triple(key, formatKey(key), value as Map<String, Any?>))
+                }
+                value is List<*> && value.isNotEmpty() && value.first() is Map<*, *> -> {
+                    // Lista de maps => cada item vira uma sub-seção
+                    value.forEachIndexed { index, item ->
+                        if (item is Map<*, *> && item.isNotEmpty()) {
+                            @Suppress("UNCHECKED_CAST")
+                            sections.add(Triple("${key}_${index}", "${formatKey(key)} [${index + 1}]", item as Map<String, Any?>))
+                        }
+                    }
+                }
+                else -> simplePairs.add(key to value)
+            }
+        }
+
+        // Campos simples no topo
+        if (simplePairs.isNotEmpty()) {
+            addSectionTitle(document, "Informacoes Gerais")
+            addDataTable(document, simplePairs.map { (k, v) -> k to formatValue(v) })
+        }
+
+        // Cada seção com header colorido
+        for ((_, label, sectionData) in sections) {
+            addSectionTitle(document, label)
+            renderSectionData(document, sectionData)
+        }
+    }
+
+    private fun renderSectionData(document: Document, data: Map<String, Any?>) {
+        val simplePairs = mutableListOf<Pair<String, String>>()
+        val subSections = mutableListOf<Triple<String, String, Any?>>()
+
+        data.forEach { (key, value) ->
+            when {
+                value is Map<*, *> && value.isNotEmpty() -> subSections.add(Triple(key, formatKey(key), value))
+                value is List<*> && value.isNotEmpty() && value.first() is Map<*, *> -> subSections.add(Triple(key, formatKey(key), value))
+                else -> simplePairs.add(key to formatValue(value))
+            }
+        }
+
+        if (simplePairs.isNotEmpty()) {
+            addDataTable(document, simplePairs)
+        }
+
+        for ((_, label, value) in subSections) {
+            when (value) {
+                is Map<*, *> -> {
+                    addSubSectionTitle(document, label)
+                    @Suppress("UNCHECKED_CAST")
+                    val flat = flattenMap(value as Map<String, Any?>, "")
+                    addDataTable(document, flat)
+                }
+                is List<*> -> {
+                    value.forEachIndexed { index, item ->
+                        if (item is Map<*, *> && item.isNotEmpty()) {
+                            addSubSectionTitle(document, "$label [${index + 1}]")
+                            @Suppress("UNCHECKED_CAST")
+                            val flat = flattenMap(item as Map<String, Any?>, "")
+                            addDataTable(document, flat)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun addSectionTitle(document: Document, title: String) {
+        document.add(Paragraph(" "))
+
+        val table = PdfPTable(1)
+        table.widthPercentage = 100f
+
+        val cell = PdfPCell(Phrase(title.uppercase(), font(10f, bold = true, color = PRIMARY_DARK)))
+        cell.backgroundColor = SECTION_BLUE
+        cell.borderColor = SECTION_BLUE_BORDER
+        cell.borderWidth = 1f
+        cell.setPadding(8f)
+        cell.paddingLeft = 12f
+        table.addCell(cell)
+
+        document.add(table)
+    }
+
+    private fun addSubSectionTitle(document: Document, title: String) {
+        val p = Paragraph(title, font(9f, bold = true, color = ACCENT))
+        p.spacingBefore = 6f
+        p.spacingAfter = 4f
+        p.indentationLeft = 8f
+        document.add(p)
+    }
+
+    private fun addDataTable(document: Document, pairs: List<Pair<String, String>>) {
+        if (pairs.isEmpty()) return
+
         val table = PdfPTable(2)
         table.widthPercentage = 100f
         table.setWidths(floatArrayOf(35f, 65f))
 
-        // Table header
-        addTableHeaderCell(table, "Campo")
-        addTableHeaderCell(table, "Valor")
-
-        val flatData = flattenMap(data, "")
-        flatData.forEachIndexed { index, (key, value) ->
+        pairs.forEachIndexed { index, (key, value) ->
             val bg = if (index % 2 == 0) Color.WHITE else LIGHT_BG
 
-            val keyCell = PdfPCell(Phrase(formatKey(key), font(9f, bold = true)))
+            val keyCell = PdfPCell(Phrase(formatKey(key), font(8.5f, bold = true)))
             keyCell.backgroundColor = bg
-            keyCell.setPadding(7f)
+            keyCell.setPadding(6f)
+            keyCell.paddingLeft = 10f
             keyCell.borderColor = BORDER_COLOR
             keyCell.borderWidth = 0.5f
             table.addCell(keyCell)
 
-            val valCell = PdfPCell(Phrase(value, font(9f)))
+            // Colorir valores negativos
+            val valueColor = getValueColor(key, value)
+            val valCell = PdfPCell(Phrase(value, font(8.5f, color = valueColor)))
             valCell.backgroundColor = bg
-            valCell.setPadding(7f)
+            valCell.setPadding(6f)
             valCell.borderColor = BORDER_COLOR
             valCell.borderWidth = 0.5f
             table.addCell(valCell)
@@ -252,12 +505,36 @@ class PdfReportService(
         document.add(table)
     }
 
-    private fun addTableHeaderCell(table: PdfPTable, text: String) {
-        val cell = PdfPCell(Phrase(text, font(9.5f, bold = true, color = Color.WHITE)))
-        cell.backgroundColor = PRIMARY_DARK
-        cell.setPadding(9f)
-        cell.border = Rectangle.NO_BORDER
-        table.addCell(cell)
+    private fun getValueColor(key: String, value: String): Color {
+        val keyLower = key.lowercase()
+        val valueLower = value.lowercase()
+
+        // Valores positivos / limpos
+        if (valueLower.contains("nenhum") || valueLower.contains("sem ") ||
+            valueLower == "0" || valueLower == "nao informado" ||
+            valueLower.contains("nao existe") || valueLower.contains("sem ocorrencia")
+        ) {
+            // Só aplica verde se for campo de alerta
+            if (NEGATIVE_KEYWORDS.any { keyLower.contains(it) || valueLower.contains(it) }.not() &&
+                keyLower.contains("ocorrencia").not() && keyLower.contains("sinistro").not()
+            ) {
+                return DARK_TEXT
+            }
+        }
+
+        // Valores negativos / alertas
+        for (keyword in NEGATIVE_KEYWORDS) {
+            if (valueLower.contains(keyword)) return RED
+        }
+
+        // Campos de situação irregular
+        if ((keyLower.contains("situacao") || keyLower.contains("status")) &&
+            (valueLower.contains("irregular") || valueLower.contains("cancelad") || valueLower.contains("bloqueado"))
+        ) {
+            return RED
+        }
+
+        return DARK_TEXT
     }
 
     // ── Footer ─────────────────────────────────────────────────────
@@ -269,14 +546,12 @@ class PdfReportService(
         val footerTable = PdfPTable(1)
         footerTable.widthPercentage = 100f
 
-        // Accent bar above footer
         val accentCell = PdfPCell(Phrase(" "))
         accentCell.backgroundColor = ACCENT
         accentCell.border = Rectangle.NO_BORDER
         accentCell.fixedHeight = 3f
         footerTable.addCell(accentCell)
 
-        // Company name
         val brandCell = PdfPCell(Phrase("ND Consultas Veiculares", font(8f, bold = true, color = PRIMARY)))
         brandCell.border = Rectangle.NO_BORDER
         brandCell.paddingTop = 8f
@@ -284,11 +559,12 @@ class PdfReportService(
         brandCell.horizontalAlignment = Element.ALIGN_CENTER
         footerTable.addCell(brandCell)
 
-        // Disclaimer
-        val disclaimerCell = PdfPCell(Phrase(
-            "Documento gerado automaticamente. As informacoes contidas neste relatorio sao provenientes de fontes publicas e oficiais.",
-            font(7f, color = LIGHT_GRAY)
-        ))
+        val disclaimerCell = PdfPCell(
+            Phrase(
+                "Documento gerado automaticamente. As informacoes contidas neste relatorio sao provenientes de fontes publicas e oficiais.",
+                font(7f, color = LIGHT_GRAY)
+            )
+        )
         disclaimerCell.border = Rectangle.NO_BORDER
         disclaimerCell.paddingTop = 2f
         disclaimerCell.paddingBottom = 4f
@@ -296,6 +572,82 @@ class PdfReportService(
         footerTable.addCell(disclaimerCell)
 
         document.add(footerTable)
+    }
+
+    // ── Busca recursiva nos dados ──────────────────────────────────
+
+    private fun searchInData(data: Map<String, Any?>, keywords: List<String>): Boolean {
+        for ((key, value) in data) {
+            val keyLower = key.lowercase()
+            for (keyword in keywords) {
+                if (keyLower.contains(keyword)) {
+                    val strVal = value?.toString()?.lowercase() ?: ""
+                    // Não considerar "0", "nao", "nenhum", "sem" como positivos
+                    if (strVal != "0" && strVal != "false" && !strVal.startsWith("nao ") &&
+                        !strVal.startsWith("nenhum") && !strVal.startsWith("sem ") && strVal.isNotBlank()
+                    ) {
+                        return true
+                    }
+                }
+            }
+            // Buscar nos valores também
+            val strVal = value?.toString()?.lowercase() ?: ""
+            for (keyword in keywords) {
+                if (strVal.contains(keyword) && strVal != "0" && strVal != "false") {
+                    // Verificar se nao é negação
+                    if (!strVal.contains("nao existe") && !strVal.contains("sem $keyword") &&
+                        !strVal.contains("nenhum") && !strVal.startsWith("sem ")
+                    ) {
+                        return true
+                    }
+                }
+            }
+            // Recursão em sub-maps
+            if (value is Map<*, *>) {
+                @Suppress("UNCHECKED_CAST")
+                if (searchInData(value as Map<String, Any?>, keywords)) return true
+            }
+            if (value is List<*>) {
+                for (item in value) {
+                    if (item is Map<*, *>) {
+                        @Suppress("UNCHECKED_CAST")
+                        if (searchInData(item as Map<String, Any?>, keywords)) return true
+                    }
+                }
+            }
+        }
+        return false
+    }
+
+    private fun findRawValue(data: Map<String, Any?>, targetKey: String): String? {
+        for ((key, value) in data) {
+            if (key.equals(targetKey, ignoreCase = true)) {
+                return value?.toString()?.trim()?.ifBlank { null }
+            }
+            if (value is Map<*, *>) {
+                @Suppress("UNCHECKED_CAST")
+                val found = findRawValue(value as Map<String, Any?>, targetKey)
+                if (found != null) return found
+            }
+            if (value is List<*>) {
+                for (item in value) {
+                    if (item is Map<*, *>) {
+                        @Suppress("UNCHECKED_CAST")
+                        val found = findRawValue(item as Map<String, Any?>, targetKey)
+                        if (found != null) return found
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun findValueForKeys(data: Map<String, Any?>, keys: List<String>): String? {
+        for (key in keys) {
+            val value = findRawValue(data, key)
+            if (value != null) return value
+        }
+        return null
     }
 
     // ── Logo download with cache ───────────────────────────────────
@@ -319,7 +671,6 @@ class PdfReportService(
             return try {
                 val bytes = downloadImage(url)
                 if (bytes != null && bytes.isNotEmpty()) {
-                    // Validate that it's a valid image by trying to parse it
                     Image.getInstance(bytes)
                     cachedLogo = bytes
                     log.info("Logo carregada com sucesso ({} bytes)", bytes.size)
@@ -390,6 +741,17 @@ class PdfReportService(
             .joinToString(" ") { word ->
                 word.replaceFirstChar { it.uppercase() }
             }
+    }
+
+    private fun formatValue(value: Any?): String {
+        return when (value) {
+            null -> "Nao informado"
+            is List<*> -> {
+                if (value.isEmpty()) "Nao informado"
+                else value.filterNotNull().joinToString(", ").ifBlank { "Nao informado" }
+            }
+            else -> value.toString().trim().ifBlank { "Nao informado" }
+        }
     }
 
     private fun flattenMap(map: Map<String, Any?>, prefix: String): List<Pair<String, String>> {
