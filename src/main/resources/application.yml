@@ -20,6 +20,9 @@ whatsapp:
 central:
   api-key: ${CENTRAL_API_KEY}
 
+apibrasil:
+  bearer-token: ${APIBRASIL_BEARER_TOKEN}
+
 admin:
   phone-number: ${ADMIN_PHONE_NUMBER}
 

@@ -38,7 +38,7 @@ class ConsultarCommand(
 
     override val name = "/consultar"
     override val description = "Painel de consulta veicular"
-    override val aliases = listOf("/consulta", "/c")
+    override val aliases = listOf("/consulta", "/consultas", "/c")
 
     companion object {
         private val log = LoggerFactory.getLogger(ConsultarCommand::class.java)
@@ -67,20 +67,37 @@ class ConsultarCommand(
         }
     }
 
-    // ── Step 1: Categorias ─────────────────────────────────────────
+    // ── Step 1: Listar módulos agrupados por categoria ───────────────
 
     private fun showCategories(context: CommandContext, whatsappService: WhatsappService) {
         val isAdmin = adminService.isAdmin(context.from)
 
-        val visibleCategories = if (isAdmin) {
-            queryTypeRegistry.categories.toList()
-        } else {
-            queryTypeRegistry.categories.filter { (catKey, _) ->
-                queryTypeRegistry.getTypesForCategory(catKey).any { pricingService.isModuleEnabled(it.key) }
-            }.toList()
+        val sections = queryTypeRegistry.categories.mapNotNull { (catKey, catInfo) ->
+            val allTypes = queryTypeRegistry.getTypesForCategory(catKey)
+            val types = if (isAdmin) allTypes
+                else allTypes.filter { pricingService.isModuleEnabled(it.key) }
+
+            if (types.isEmpty()) return@mapNotNull null
+
+            ListSection(
+                title = catInfo.label,
+                rows = types.map { (tipo, info) ->
+                    val price = pricingService.getPrice(tipo)
+                    val priceText = when {
+                        isAdmin -> "Grátis (Admin)"
+                        price > BigDecimal.ZERO -> "R\$ ${"%.2f".format(price)}"
+                        else -> "Grátis"
+                    }
+                    ListRow(
+                        id = "/consultar $tipo",
+                        title = info.label,
+                        description = "$priceText | ${info.inputPrompt.replace("*", "")}"
+                    )
+                }
+            )
         }
 
-        if (visibleCategories.isEmpty()) {
+        if (sections.isEmpty()) {
             whatsappService.sendMessage(
                 context.from,
                 "Nenhum módulo de consulta disponível no momento.\nTente novamente mais tarde."
@@ -90,83 +107,21 @@ class ConsultarCommand(
 
         whatsappService.sendList(
             to = context.from,
-            header = "Consulta Veicular",
+            header = "Consultas Veiculares",
             body = buildString {
-                append("Bem-vindo ao *Painel de Consultas Veiculares*\n\n")
-                append("Selecione uma categoria para ver os módulos disponíveis.")
+                append("Bem-vindo ao *Painel de Consultas*\n\n")
+                append("Selecione o tipo de consulta que deseja realizar.")
             },
-            buttonLabel = "Ver Categorias",
-            footer = "ND Consultas | Veicular",
-            sections = listOf(
-                ListSection(
-                    title = "Categorias",
-                    rows = visibleCategories.map { (key, cat) ->
-                        val activeCount = if (isAdmin) cat.count
-                            else queryTypeRegistry.getTypesForCategory(key).count { pricingService.isModuleEnabled(it.key) }
-                        ListRow(
-                            id = "/consultar cat $key",
-                            title = cat.label,
-                            description = "${cat.description} ($activeCount módulos)"
-                        )
-                    }
-                )
-            )
+            buttonLabel = "Ver Consultas",
+            footer = "ND Consultas",
+            sections = sections
         )
     }
 
-    // ── Step 2: Tipos da categoria ─────────────────────────────────
+    // ── Step 2 (legado): Redireciona para listagem direta ──────────
 
     private fun showCategoryTypes(context: CommandContext, whatsappService: WhatsappService) {
-        val catKey = context.args[1]
-        val category = queryTypeRegistry.categories[catKey]
-
-        if (category == null) {
-            whatsappService.sendMessage(
-                context.from,
-                "Categoria inválida.\nUse /consultar para ver as categorias."
-            )
-            return
-        }
-
-        val allTypes = queryTypeRegistry.getTypesForCategory(catKey)
-        val isAdmin = adminService.isAdmin(context.from)
-
-        val types = if (isAdmin) allTypes
-            else allTypes.filter { pricingService.isModuleEnabled(it.key) }
-
-        if (types.isEmpty()) {
-            whatsappService.sendMessage(
-                context.from,
-                "Nenhum módulo disponível nesta categoria no momento.\nTente outra categoria."
-            )
-            return
-        }
-
-        whatsappService.sendList(
-            to = context.from,
-            header = category.label,
-            body = "Selecione o tipo de consulta que deseja realizar.",
-            buttonLabel = "Ver Módulos",
-            footer = "ND Consultas | ${category.label}",
-            sections = listOf(
-                ListSection(
-                    title = category.label,
-                    rows = types.map { (tipo, info) ->
-                        val price = pricingService.getPrice(tipo)
-                        val priceText = when {
-                            isAdmin -> "Grátis (Admin)"
-                            price > BigDecimal.ZERO -> "R\$ ${"%.2f".format(price)}"
-                            else -> "Grátis"
-                        }
-                        ListRow(
-                            id = "/consultar $tipo",
-                            title = info.label,
-                            description = "$priceText | ${info.inputPrompt.replace("*", "")}"
-                        )
-                    }
-                )
-            )
-        )
+        showCategories(context, whatsappService)
     }
 
     // ── Step 3: Solicitar dado ──────────────────────────────────────
