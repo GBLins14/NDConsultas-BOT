@@ -105,10 +105,22 @@ class VehicleConsultationService(
                 return ConsultationResult(success = false, error = errorMsg)
             }
 
-            @Suppress("UNCHECKED_CAST")
-            val data = response.filterKeys { it != "error" && it != "success" && it != "status" }
+            val statusCode = response["status_code"]
+            if (statusCode != null && statusCode != 200 && statusCode != 200.0) {
+                val errorMsg = response["message"]?.toString() ?: "Erro na consulta (status $statusCode)."
+                return ConsultationResult(success = false, error = errorMsg)
+            }
 
-            ConsultationResult(success = true, data = data)
+            @Suppress("UNCHECKED_CAST")
+            val rawData = response["data"] as? Map<String, Any?>
+            if (rawData == null) {
+                return ConsultationResult(success = false, error = "Nenhum dado retornado pela API Brasil.")
+            }
+
+            @Suppress("UNCHECKED_CAST")
+            val veicular = rawData["veicular"] as? Map<String, Any?> ?: rawData
+
+            ConsultationResult(success = true, data = veicular)
         } catch (e: RestClientException) {
             log.error("Erro ao consultar API Brasil [{}]: {}", tipo, e.message, e)
             ConsultationResult(success = false, error = "Erro de comunicacao com a API Brasil. Tente novamente mais tarde.")

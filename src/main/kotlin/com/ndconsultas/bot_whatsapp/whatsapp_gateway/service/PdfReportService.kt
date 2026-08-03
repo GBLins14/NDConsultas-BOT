@@ -402,7 +402,9 @@ class PdfReportService(
                     result.addAll(flattenMap(value as Map<String, Any?>, fullKey))
                 }
                 is List<*> -> {
-                    if (value.isNotEmpty() && value.first() is Map<*, *>) {
+                    if (value.isEmpty()) {
+                        result.add(fullKey to "Nao informado")
+                    } else if (value.first() is Map<*, *>) {
                         value.forEachIndexed { index, item ->
                             if (item is Map<*, *>) {
                                 @Suppress("UNCHECKED_CAST")
@@ -410,11 +412,15 @@ class PdfReportService(
                             }
                         }
                     } else {
-                        result.add(fullKey to value.filterNotNull().joinToString(", "))
+                        val joined = value.filterNotNull().joinToString(", ")
+                        result.add(fullKey to joined.ifBlank { "Nao informado" })
                     }
                 }
-                null -> result.add(fullKey to "-")
-                else -> result.add(fullKey to value.toString())
+                null -> result.add(fullKey to "Nao informado")
+                else -> {
+                    val text = value.toString().trim()
+                    result.add(fullKey to text.ifBlank { "Nao informado" })
+                }
             }
         }
         return result
