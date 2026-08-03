@@ -70,6 +70,14 @@ class PdfReportService(
             "restricao", "restri\u00e7\u00e3o", "existe ocorrencia", "ocorrencia de sinistro",
             "existe_ocorrencia", "indicio", "irregular", "cancelad"
         )
+
+        // Valores que significam "limpo" / "sem problema" — usados para NÃO gerar alerta
+        private val SAFE_VALUES = listOf(
+            "sem restricao", "sem restricoes", "nenhuma", "nenhum", "nao consta",
+            "nao existe", "nao ha", "nao possui", "sem ocorrencia", "sem ocorrencias",
+            "sem comunicado", "sem intencao", "livre", "normal", "regular",
+            "circulacao", "em circulacao", "0", "false", "nao", ""
+        )
     }
 
     @Volatile private var cachedLogo: ByteArray? = null
@@ -77,14 +85,21 @@ class PdfReportService(
 
     // ── Modelo de alerta por módulo ────────────────────────────────
 
-    data class AlertDef(
+    private enum class AlertStrategy {
+        HAS_RECORDS,           // Alerta se existem registros (arrays não-vazios) nos dados
+        FIELD_VALUE_NEGATIVE,  // Alerta se o valor do campo NÃO está na lista de valores "seguros"
+        FIELD_HAS_CONTENT,     // Alerta se o campo tem conteúdo significativo (não vazio/nao/sem)
+        EXISTE_FLAG,           // Alerta se campo existe_ocorrencia == "1"
+        COUNT_FIELD,           // Alerta se campo numérico > 0
+        INFO_ONLY              // Nunca alerta, apenas informativo
+    }
+
+    private data class AlertDef(
         val label: String,
-        val searchKeys: List<String>,
-        val detailKeys: List<String>,
+        val strategy: AlertStrategy,
+        val targetFields: List<String>,
         val positiveText: String,
-        val negativeText: String,
-        val checkExisteOcorrencia: Boolean = false,
-        val checkQuantidade: String? = null
+        val negativeText: String
     )
 
     data class AlertInfo(
@@ -95,36 +110,33 @@ class PdfReportService(
 
     private val moduleAlerts: Map<String, List<AlertDef>> = mapOf(
         "placa_serpro" to listOf(
-            AlertDef("RESTRICOES", listOf("restricao", "restri\u00e7\u00e3o", "restricoes"), listOf("restricao", "restricoes"), "Sem restricoes", "Restricao encontrada"),
-            AlertDef("SITUACAO", listOf("situacao"), listOf("situacao", "situacao_veiculo"), "Veiculo regular", "Situacao irregular"),
-            AlertDef("COMUNICADO DE VENDA", listOf("comunicado_venda", "comunicado de venda"), listOf("comunicado_venda"), "Sem comunicado", "Comunicado de venda registrado"),
-            AlertDef("INTENCAO DE VENDA", listOf("intencao_venda", "intencao de venda"), listOf("intencao_venda"), "Sem intencao", "Intencao de venda registrada")
+            AlertDef("RESTRICOES", AlertStrategy.FIELD_VALUE_NEGATIVE, listOf("restricao", "restricoes", "restricao_1", "restricao_2", "restricao_3", "restricao_4"), "Sem restricoes", "Restricao encontrada"),
+            AlertDef("SITUACAO", AlertStrategy.FIELD_VALUE_NEGATIVE, listOf("situacao", "situacao_veiculo"), "Veiculo regular", "Situacao irregular"),
+            AlertDef("COMUNICADO DE VENDA", AlertStrategy.FIELD_HAS_CONTENT, listOf("comunicado_venda", "comunicado_de_venda"), "Sem comunicado", "Comunicado de venda registrado"),
+            AlertDef("INTENCAO DE VENDA", AlertStrategy.FIELD_HAS_CONTENT, listOf("intencao_venda", "intencao_de_venda"), "Sem intencao", "Intencao de venda registrada")
         ),
         "bin_chassi" to listOf(
-            AlertDef("SITUACAO", listOf("situacao"), listOf("situacao", "situacao_veiculo"), "Veiculo regular", "Situacao irregular")
+            AlertDef("SITUACAO", AlertStrategy.FIELD_VALUE_NEGATIVE, listOf("situacao", "situacao_veiculo"), "Veiculo regular", "Situacao irregular")
         ),
         "bin_motor" to listOf(
-            AlertDef("SITUACAO", listOf("situacao"), listOf("situacao", "situacao_veiculo"), "Veiculo regular", "Situacao irregular")
+            AlertDef("SITUACAO", AlertStrategy.FIELD_VALUE_NEGATIVE, listOf("situacao", "situacao_veiculo"), "Veiculo regular", "Situacao irregular")
         ),
         "bin_renavam" to listOf(
-            AlertDef("SITUACAO", listOf("situacao"), listOf("situacao", "situacao_veiculo"), "Veiculo regular", "Situacao irregular")
+            AlertDef("SITUACAO", AlertStrategy.FIELD_VALUE_NEGATIVE, listOf("situacao", "situacao_veiculo"), "Veiculo regular", "Situacao irregular")
         ),
         "multas_senatran" to listOf(
-            AlertDef("MULTAS", listOf("multa", "infracao", "auto_infracao"), listOf("multa", "infracao"), "Sem multas registradas", "Multa(s) encontrada(s)")
+            AlertDef("MULTAS", AlertStrategy.HAS_RECORDS, emptyList(), "Sem multas registradas", "Multa(s) encontrada(s)")
         ),
         "ocorrencias_senatran" to listOf(
-            AlertDef("ROUBO / FURTO", listOf("roubo", "furto"), listOf("roubo", "furto", "tipo_ocorrencia"), "Nenhuma ocorrencia", "Ocorrencia encontrada"),
-            AlertDef("SINISTRO", listOf("sinistro", "indicio_sinistro"), listOf("descricao_ocorrencia"), "Sem indicio de sinistro", "Indicio de sinistro encontrado", checkExisteOcorrencia = true)
+            AlertDef("ROUBO / FURTO", AlertStrategy.HAS_RECORDS, emptyList(), "Nenhuma ocorrencia", "Ocorrencia(s) encontrada(s)"),
         ),
         "renajud_senatran" to listOf(
-            AlertDef("BLOQUEIO", listOf("bloqueio", "bloqueado"), listOf("bloqueio", "tipo_restricao"), "Sem bloqueio judicial", "Bloqueio judicial encontrado"),
-            AlertDef("PENHORA", listOf("penhora"), listOf("penhora", "tipo_restricao"), "Sem penhora", "Penhora encontrada"),
-            AlertDef("IMPEDIMENTO", listOf("impedimento"), listOf("impedimento", "tipo_restricao"), "Sem impedimento", "Impedimento encontrado")
+            AlertDef("RESTRICOES JUDICIAIS", AlertStrategy.HAS_RECORDS, emptyList(), "Sem restricoes judiciais", "Restricao judicial encontrada")
         ),
         "leilao_completo_score" to listOf(
-            AlertDef("SINISTRO", listOf("sinistro", "indicio_sinistro"), listOf("descricao_ocorrencia"), "Sem indicio de sinistro", "Indicio de sinistro encontrado", checkExisteOcorrencia = true),
-            AlertDef("LEILAO", listOf("leilao", "leiloeiro", "comitente"), listOf(), "Sem historico de leilao", "", checkQuantidade = "quantidade_ocorrencias"),
-            AlertDef("SCORE", listOf("pontuacao", "score"), listOf("pontuacao", "descricao_pontuacao"), "Score disponivel", "Score disponivel")
+            AlertDef("SINISTRO", AlertStrategy.EXISTE_FLAG, listOf("existe_ocorrencia"), "Sem indicio de sinistro", "Indicio de sinistro encontrado"),
+            AlertDef("LEILAO", AlertStrategy.COUNT_FIELD, listOf("quantidade_ocorrencias"), "Sem historico de leilao", "Historico de leilao encontrado"),
+            AlertDef("SCORE", AlertStrategy.INFO_ONLY, listOf("pontuacao", "aceitacao", "descricao_pontuacao"), "", "")
         )
     )
 
@@ -154,51 +166,123 @@ class PdfReportService(
         return output.toByteArray()
     }
 
-    // ── Avaliação de alertas por definição ─────────────────────────
+    // ── Avaliação de alertas por estratégia ──────────────────────
 
     private fun evaluateAlerts(defs: List<AlertDef>, data: Map<String, Any?>): List<AlertInfo> {
         return defs.map { def ->
-            val isAlert: Boolean
-            val detail: String
+            when (def.strategy) {
+                AlertStrategy.HAS_RECORDS -> evaluateHasRecords(def, data)
+                AlertStrategy.FIELD_VALUE_NEGATIVE -> evaluateFieldValueNegative(def, data)
+                AlertStrategy.FIELD_HAS_CONTENT -> evaluateFieldHasContent(def, data)
+                AlertStrategy.EXISTE_FLAG -> evaluateExisteFlag(def, data)
+                AlertStrategy.COUNT_FIELD -> evaluateCountField(def, data)
+                AlertStrategy.INFO_ONLY -> evaluateInfoOnly(def, data)
+            }
+        }
+    }
 
-            when {
-                def.checkQuantidade != null -> {
-                    val qty = findRawValue(data, def.checkQuantidade)
-                    val hasData = (qty != null && qty != "0") || searchInData(data, def.searchKeys)
-                    isAlert = hasData
-                    detail = if (hasData) "${qty ?: "?"} ocorrencia(s) de leilao" else def.positiveText
-                }
-                def.checkExisteOcorrencia -> {
-                    val existe = findRawValue(data, "existe_ocorrencia")
-                    val hasSinistro = existe == "1" || searchInData(data, def.searchKeys)
-                    isAlert = hasSinistro
-                    val detailValue = findValueForKeys(data, def.detailKeys)
-                    detail = if (hasSinistro) detailValue ?: def.negativeText else def.positiveText
-                }
-                def.label == "SCORE" -> {
-                    val pontuacao = findRawValue(data, "pontuacao")
-                    val descricao = findRawValue(data, "descricao_pontuacao")
-                    val aceitacao = findRawValue(data, "aceitacao")
-                    isAlert = false
-                    detail = buildString {
-                        if (pontuacao != null) append("Nota: $pontuacao")
-                        if (aceitacao != null) {
-                            if (isNotEmpty()) append(" | ")
-                            append("Aceitacao: $aceitacao%")
-                        }
-                        if (isEmpty()) append(descricao ?: def.positiveText)
+    // Alerta se existem arrays com registros (maps) nos dados
+    private fun evaluateHasRecords(def: AlertDef, data: Map<String, Any?>): AlertInfo {
+        val recordCount = countDataRecords(data)
+        val isAlert = recordCount > 0
+        val detail = if (isAlert) "$recordCount registro(s) encontrado(s)" else def.positiveText
+        return AlertInfo(def.label, isAlert, detail)
+    }
+
+    // Conta quantos registros (items em arrays de maps) existem nos dados
+    private fun countDataRecords(data: Map<String, Any?>): Int {
+        var count = 0
+        for ((_, value) in data) {
+            when (value) {
+                is List<*> -> {
+                    val mapItems = value.filterIsInstance<Map<*, *>>()
+                    if (mapItems.isNotEmpty()) {
+                        count += mapItems.size
                     }
                 }
-                else -> {
-                    val found = searchInData(data, def.searchKeys)
-                    isAlert = found
-                    val detailValue = findValueForKeys(data, def.detailKeys)
-                    detail = if (found) detailValue ?: def.negativeText else def.positiveText
+                is Map<*, *> -> {
+                    @Suppress("UNCHECKED_CAST")
+                    count += countDataRecords(value as Map<String, Any?>)
                 }
             }
-
-            AlertInfo(label = def.label, isAlert = isAlert, detail = detail)
         }
+        return count
+    }
+
+    // Alerta se o valor do campo NÃO é seguro (não está na lista SAFE_VALUES)
+    private fun evaluateFieldValueNegative(def: AlertDef, data: Map<String, Any?>): AlertInfo {
+        for (fieldName in def.targetFields) {
+            val value = findRawValue(data, fieldName)
+            if (value != null) {
+                val valueLower = value.lowercase().trim()
+                val isSafe = SAFE_VALUES.any { valueLower == it || valueLower.contains(it) }
+                if (!isSafe && valueLower.isNotBlank()) {
+                    return AlertInfo(def.label, true, value)
+                }
+            }
+        }
+        return AlertInfo(def.label, false, def.positiveText)
+    }
+
+    // Alerta se o campo existe e tem conteúdo significativo
+    private fun evaluateFieldHasContent(def: AlertDef, data: Map<String, Any?>): AlertInfo {
+        for (fieldName in def.targetFields) {
+            val value = findRawValue(data, fieldName)
+            if (value != null) {
+                val valueLower = value.lowercase().trim()
+                val isEmpty = valueLower.isBlank() || SAFE_VALUES.any { valueLower == it }
+                if (!isEmpty) {
+                    return AlertInfo(def.label, true, value)
+                }
+            }
+        }
+        return AlertInfo(def.label, false, def.positiveText)
+    }
+
+    // Alerta se existe_ocorrencia == "1"
+    private fun evaluateExisteFlag(def: AlertDef, data: Map<String, Any?>): AlertInfo {
+        for (fieldName in def.targetFields) {
+            val value = findRawValue(data, fieldName)
+            if (value != null) {
+                val isAlert = value == "1" || value.equals("sim", ignoreCase = true) || value.equals("true", ignoreCase = true)
+                if (isAlert) {
+                    val descricao = findRawValue(data, "descricao_ocorrencia")
+                    return AlertInfo(def.label, true, descricao ?: def.negativeText)
+                }
+            }
+        }
+        return AlertInfo(def.label, false, def.positiveText)
+    }
+
+    // Alerta se campo numérico > 0
+    private fun evaluateCountField(def: AlertDef, data: Map<String, Any?>): AlertInfo {
+        for (fieldName in def.targetFields) {
+            val value = findRawValue(data, fieldName)
+            if (value != null) {
+                val num = value.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0
+                if (num > 0) {
+                    return AlertInfo(def.label, true, "$num ocorrencia(s)")
+                }
+            }
+        }
+        return AlertInfo(def.label, false, def.positiveText)
+    }
+
+    // Nunca alerta — apenas informativo (ex: Score)
+    private fun evaluateInfoOnly(def: AlertDef, data: Map<String, Any?>): AlertInfo {
+        val detail = buildString {
+            val pontuacao = findRawValue(data, "pontuacao")
+            val aceitacao = findRawValue(data, "aceitacao")
+            val descricao = findRawValue(data, "descricao_pontuacao")
+            if (pontuacao != null) append("Nota: $pontuacao")
+            if (aceitacao != null) {
+                if (isNotEmpty()) append(" | ")
+                append("Aceitacao: $aceitacao%")
+            }
+            if (isEmpty() && descricao != null) append(descricao)
+            if (isEmpty()) append("Informacao disponivel")
+        }
+        return AlertInfo(def.label, false, detail)
     }
 
     // ── Header com Logo ───────────────────────────────────────────
@@ -740,42 +824,7 @@ class PdfReportService(
         document.add(footerTable)
     }
 
-    // ── Busca recursiva nos dados ──────────────────────────────────
-
-    private fun searchInData(data: Map<String, Any?>, keywords: List<String>): Boolean {
-        for ((key, value) in data) {
-            val keyLower = key.lowercase()
-            for (keyword in keywords) {
-                if (keyLower.contains(keyword)) {
-                    val strVal = value?.toString()?.lowercase() ?: ""
-                    if (strVal != "0" && strVal != "false" && !strVal.startsWith("nao ") &&
-                        !strVal.startsWith("nenhum") && !strVal.startsWith("sem ") && strVal.isNotBlank()
-                    ) return true
-                }
-            }
-            val strVal = value?.toString()?.lowercase() ?: ""
-            for (keyword in keywords) {
-                if (strVal.contains(keyword) && strVal != "0" && strVal != "false") {
-                    if (!strVal.contains("nao existe") && !strVal.contains("sem $keyword") &&
-                        !strVal.contains("nenhum") && !strVal.startsWith("sem ")
-                    ) return true
-                }
-            }
-            if (value is Map<*, *>) {
-                @Suppress("UNCHECKED_CAST")
-                if (searchInData(value as Map<String, Any?>, keywords)) return true
-            }
-            if (value is List<*>) {
-                for (item in value) {
-                    if (item is Map<*, *>) {
-                        @Suppress("UNCHECKED_CAST")
-                        if (searchInData(item as Map<String, Any?>, keywords)) return true
-                    }
-                }
-            }
-        }
-        return false
-    }
+    // ── Busca de valores nos dados ────────────────────────────────
 
     private fun findRawValue(data: Map<String, Any?>, targetKey: String): String? {
         for ((key, value) in data) {
@@ -794,14 +843,6 @@ class PdfReportService(
                     }
                 }
             }
-        }
-        return null
-    }
-
-    private fun findValueForKeys(data: Map<String, Any?>, keys: List<String>): String? {
-        for (key in keys) {
-            val value = findRawValue(data, key)
-            if (value != null) return value
         }
         return null
     }
