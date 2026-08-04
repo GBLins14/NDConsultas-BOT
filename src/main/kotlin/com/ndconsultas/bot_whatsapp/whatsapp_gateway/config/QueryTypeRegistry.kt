@@ -79,6 +79,24 @@ class QueryTypeRegistry {
             returnDetails = "Tipo de Restricao, Tribunal, Vara, Numero do Processo, Data da Inclusao, Detalhes do Bloqueio/Penhora/Impedimento."
         ),
 
+        // ── Consultas Pessoais ──────────────────────────────────────
+        "telefone_full" to QueryTypeInfo(
+            label = "Telefone Full",
+            inputPrompt = "Informe o *numero de telefone* (com DDD)",
+            category = "pessoal",
+            description = "Consulta completa por numero de telefone.",
+            returnSummary = "Nome, CPF, Endereco, Operadora",
+            returnDetails = "Nome Completo, CPF, Data de Nascimento, Sexo, Endereco, Bairro, Cidade, UF, CEP, Operadora, Tipo de Linha, Portabilidade."
+        ),
+        "cpf_full" to QueryTypeInfo(
+            label = "CPF Full",
+            inputPrompt = "Informe o *CPF*",
+            category = "pessoal",
+            description = "Consulta completa por CPF.",
+            returnSummary = "Nome, Endereco, Telefone, Renda",
+            returnDetails = "Nome Completo, CPF, Data de Nascimento, Sexo, Nome da Mae, Situacao Cadastral, Endereco, Bairro, Cidade, UF, CEP, Telefones, E-mail, Renda Presumida, Escolaridade, Obito."
+        ),
+
         // ── Busca Leilao e Sinistro ─────────────────────────────────
         "leilao_completo_score" to QueryTypeInfo(
             label = "Leilao Completo + Score",
@@ -92,6 +110,7 @@ class QueryTypeRegistry {
 
     val categories = linkedMapOf(
         "veicular" to CategoryInfo("Consultas Veiculares", "Placa, Chassi, Motor, Renavam, Multas e mais", 7),
+        "pessoal" to CategoryInfo("Consultas Pessoais", "Telefone, CPF", 2),
         "leilao" to CategoryInfo("Busca Leilão e Sinistro", "Leilão completo com score", 1)
     )
 
