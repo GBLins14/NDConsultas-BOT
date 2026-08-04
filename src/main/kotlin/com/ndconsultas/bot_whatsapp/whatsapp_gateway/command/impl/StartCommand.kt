@@ -19,8 +19,8 @@ class StartCommand : BotCommand {
             buildString {
                 appendLine("*Olá, ${context.senderName}!*")
                 appendLine()
-                appendLine("Bem-vindo ao *ND Consultas Veiculares*!")
-                appendLine("Sou seu assistente virtual para consultas de veículos.")
+                appendLine("Bem-vindo ao *ND Consultas*!")
+                appendLine("Sou seu assistente virtual para consultas veiculares e pessoais.")
                 appendLine()
                 appendLine("Escolha uma opção abaixo para começar.")
             }
@@ -30,7 +30,7 @@ class StartCommand : BotCommand {
             to = context.from,
             body = "O que deseja fazer?",
             buttons = listOf(
-                Button(id = "/consultar", title = "Consultar Veículo"),
+                Button(id = "/consultar", title = "Consultas"),
                 Button(id = "/help", title = "Ajuda")
             ),
             footer = "ND Consultas | v1.0"

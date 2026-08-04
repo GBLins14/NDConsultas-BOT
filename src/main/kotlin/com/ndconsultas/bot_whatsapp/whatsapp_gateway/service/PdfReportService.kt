@@ -137,6 +137,13 @@ class PdfReportService(
             AlertDef("SINISTRO", AlertStrategy.EXISTE_FLAG, listOf("existe_ocorrencia"), "Sem indicio de sinistro", "Indicio de sinistro encontrado"),
             AlertDef("LEILAO", AlertStrategy.COUNT_FIELD, listOf("quantidade_ocorrencias"), "Sem historico de leilao", "Historico de leilao encontrado"),
             AlertDef("SCORE", AlertStrategy.INFO_ONLY, listOf("pontuacao", "aceitacao", "descricao_pontuacao"), "", "")
+        ),
+        "cpf_full" to listOf(
+            AlertDef("SITUACAO CADASTRAL", AlertStrategy.FIELD_VALUE_NEGATIVE, listOf("situacao_cadastral", "situacao"), "Cadastro regular", "Situacao irregular"),
+            AlertDef("OBITO", AlertStrategy.FIELD_HAS_CONTENT, listOf("obito", "indicador_obito", "data_obito"), "Sem registro de obito", "Registro de obito encontrado")
+        ),
+        "telefone_full" to listOf(
+            AlertDef("PORTABILIDADE", AlertStrategy.FIELD_HAS_CONTENT, listOf("portabilidade"), "Sem portabilidade", "Portabilidade registrada")
         )
     )
 
@@ -155,7 +162,12 @@ class PdfReportService(
         if (alertDefs != null && alertDefs.isNotEmpty()) {
             val alerts = evaluateAlerts(alertDefs, data)
             if (alerts.isNotEmpty()) {
-                addAlertPanel(document, alerts)
+                val panelLabel = when (tipo) {
+                    "cpf_full" -> "Situacao Cadastral"
+                    "telefone_full" -> "Informacoes da Linha"
+                    else -> "Situacao do Veiculo"
+                }
+                addAlertPanel(document, alerts, panelLabel)
             }
         }
 
@@ -318,7 +330,6 @@ class PdfReportService(
 
         val titlePhrase = Phrase()
         titlePhrase.add(Phrase("ND CONSULTAS\n", font(20f, bold = true, color = Color.WHITE)))
-        titlePhrase.add(Phrase("VEICULARES", font(12f, bold = false, color = Color(180, 210, 240))))
 
         val titleCell = PdfPCell(titlePhrase)
         titleCell.backgroundColor = PRIMARY_DARK
@@ -344,8 +355,7 @@ class PdfReportService(
         cell.horizontalAlignment = Element.ALIGN_CENTER
 
         val titlePhrase = Phrase()
-        titlePhrase.add(Phrase("ND CONSULTAS ", font(20f, bold = true, color = Color.WHITE)))
-        titlePhrase.add(Phrase("VEICULARES", font(20f, bold = false, color = Color(180, 210, 240))))
+        titlePhrase.add(Phrase("ND CONSULTAS", font(20f, bold = true, color = Color.WHITE)))
         cell.phrase = titlePhrase
 
         table.addCell(cell)
@@ -371,7 +381,11 @@ class PdfReportService(
 
         val now = ZonedDateTime.now(ZoneId.of("America/Sao_Paulo")).format(DATE_FMT)
 
-        val sectionTitle = Paragraph("Relatorio de Consulta Veicular", font(13f, bold = true, color = PRIMARY))
+        val reportTitle = when {
+            tipoLabel.contains("CPF", ignoreCase = true) || tipoLabel.contains("Telefone", ignoreCase = true) -> "Relatorio de Consulta Pessoal"
+            else -> "Relatorio de Consulta Veicular"
+        }
+        val sectionTitle = Paragraph(reportTitle, font(13f, bold = true, color = PRIMARY))
         sectionTitle.spacingAfter = 8f
         document.add(sectionTitle)
 
@@ -402,8 +416,8 @@ class PdfReportService(
 
     // ── Painel de alertas visuais ──────────────────────────────────
 
-    private fun addAlertPanel(document: Document, alerts: List<AlertInfo>) {
-        val panelTitle = Paragraph("Situacao do Veiculo", font(12f, bold = true, color = PRIMARY))
+    private fun addAlertPanel(document: Document, alerts: List<AlertInfo>, panelLabel: String = "Situacao do Veiculo") {
+        val panelTitle = Paragraph(panelLabel, font(12f, bold = true, color = PRIMARY))
         panelTitle.spacingAfter = 6f
         document.add(panelTitle)
 
@@ -802,7 +816,7 @@ class PdfReportService(
         accentCell.fixedHeight = 3f
         footerTable.addCell(accentCell)
 
-        val brandCell = PdfPCell(Phrase("ND Consultas Veiculares", font(8f, bold = true, color = PRIMARY)))
+        val brandCell = PdfPCell(Phrase("ND Consultas", font(8f, bold = true, color = PRIMARY)))
         brandCell.border = Rectangle.NO_BORDER
         brandCell.paddingTop = 8f
         brandCell.paddingBottom = 2f

@@ -107,7 +107,7 @@ class ConsultarCommand(
 
         whatsappService.sendList(
             to = context.from,
-            header = "Consultas Veiculares",
+            header = "Painel de Consultas",
             body = buildString {
                 append("Bem-vindo ao *Painel de Consultas*\n\n")
                 append("Selecione o tipo de consulta que deseja realizar.")
