@@ -54,11 +54,13 @@ class QueryTypeRegistry {
             "crlv_to" to "Tocantins"
         )
 
+        data class CrlvRegion(val label: String, val states: List<String>)
+
         val CRLV_REGIONS = linkedMapOf(
-            "Norte" to listOf("crlv_ac", "crlv_ap", "crlv_pa", "crlv_ro", "crlv_rr", "crlv_to"),
-            "Nordeste" to listOf("crlv_al", "crlv_ba", "crlv_ce", "crlv_ma", "crlv_pe", "crlv_pi", "crlv_se"),
-            "Centro-Oeste" to listOf("crlv_df", "crlv_go", "crlv_ms", "crlv_mt"),
-            "Sudeste e Sul" to listOf("crlv_mg", "crlv_pr", "crlv_rj", "crlv_sp")
+            "norte" to CrlvRegion("Norte", listOf("crlv_ac", "crlv_ap", "crlv_pa", "crlv_ro", "crlv_rr", "crlv_to")),
+            "nordeste" to CrlvRegion("Nordeste", listOf("crlv_al", "crlv_ba", "crlv_ce", "crlv_ma", "crlv_pe", "crlv_pi", "crlv_se")),
+            "centro_oeste" to CrlvRegion("Centro-Oeste", listOf("crlv_df", "crlv_go", "crlv_ms", "crlv_mt")),
+            "sudeste_sul" to CrlvRegion("Sudeste e Sul", listOf("crlv_mg", "crlv_pr", "crlv_rj", "crlv_sp"))
         )
     }
 

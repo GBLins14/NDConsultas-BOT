@@ -62,7 +62,8 @@ class ConsultarCommand(
             context.args[0] == "pgto_pix" -> handlePixPayment(context, whatsappService)
             context.args[0] == "pgto_cartao" -> startCardPayment(context, whatsappService)
             context.args[0] == "cartao_input" -> handleCardInput(context, whatsappService)
-            context.args[0] == "crlv_digital" && context.args.size == 1 -> showCrlvStates(context, whatsappService)
+            context.args[0] == "crlv_digital" && context.args.size == 1 -> showCrlvRegions(context, whatsappService)
+            context.args[0] == "crlv_regiao" && context.args.size >= 2 -> showCrlvRegionStates(context, whatsappService)
             context.args.size == 1 -> promptForData(context, whatsappService)
             else -> executeQuery(context, whatsappService)
         }
@@ -150,40 +151,73 @@ class ConsultarCommand(
         )
     }
 
-    // ── CRLV: Seleção de estado ────────────────────────────────────
+    // ── CRLV: Seleção de região ───────────────────────────────────
 
-    private fun showCrlvStates(context: CommandContext, whatsappService: WhatsappService) {
+    private fun showCrlvRegions(context: CommandContext, whatsappService: WhatsappService) {
         val isAdmin = adminService.isAdmin(context.from)
 
-        val sections = QueryTypeRegistry.CRLV_REGIONS.map { (regionName, stateKeys) ->
-            val rows = stateKeys
-                .filter { isAdmin || pricingService.isModuleEnabled(it) }
-                .mapNotNull { key ->
-                    val stateName = QueryTypeRegistry.CRLV_STATES[key] ?: return@mapNotNull null
-                    ListRow(
-                        id = "/consultar $key",
-                        title = stateName,
-                        description = "CRLV-e $stateName"
-                    )
-                }
-            ListSection(title = regionName, rows = rows)
-        }.filter { it.rows.isNotEmpty() }
+        val rows = QueryTypeRegistry.CRLV_REGIONS.mapNotNull { (regionKey, region) ->
+            val hasStates = region.states.any { isAdmin || pricingService.isModuleEnabled(it) }
+            if (!hasStates) return@mapNotNull null
 
-        if (sections.isEmpty()) {
-            whatsappService.sendMessage(
-                context.from,
-                "Nenhum estado disponível para CRLV-e no momento."
+            ListRow(
+                id = "/consultar crlv_regiao $regionKey",
+                title = region.label,
+                description = "CRLV-e ${region.label} (${region.states.size} estados)"
             )
+        }
+
+        if (rows.isEmpty()) {
+            whatsappService.sendMessage(context.from, "Nenhum estado disponível para CRLV-e no momento.")
             return
         }
 
         whatsappService.sendList(
             to = context.from,
             header = "CRLV Digital (CRLV-e)",
-            body = "Selecione o *estado* para emissão do CRLV-e:",
+            body = "Selecione a *região* para emissão do CRLV-e:",
+            buttonLabel = "Ver Regiões",
+            footer = "ND Consultas",
+            sections = listOf(ListSection(title = "Regiões", rows = rows))
+        )
+    }
+
+    // ── CRLV: Seleção de estado dentro de uma região ──────────────
+
+    private fun showCrlvRegionStates(context: CommandContext, whatsappService: WhatsappService) {
+        val regionKey = context.args[1]
+        val region = QueryTypeRegistry.CRLV_REGIONS[regionKey]
+
+        if (region == null) {
+            showCrlvRegions(context, whatsappService)
+            return
+        }
+
+        val isAdmin = adminService.isAdmin(context.from)
+
+        val rows = region.states
+            .filter { isAdmin || pricingService.isModuleEnabled(it) }
+            .mapNotNull { key ->
+                val stateName = QueryTypeRegistry.CRLV_STATES[key] ?: return@mapNotNull null
+                ListRow(
+                    id = "/consultar $key",
+                    title = stateName,
+                    description = "CRLV-e $stateName"
+                )
+            }
+
+        if (rows.isEmpty()) {
+            whatsappService.sendMessage(context.from, "Nenhum estado disponível nesta região.")
+            return
+        }
+
+        whatsappService.sendList(
+            to = context.from,
+            header = "CRLV-e — ${region.label}",
+            body = "Selecione o *estado*:",
             buttonLabel = "Ver Estados",
             footer = "ND Consultas",
-            sections = sections
+            sections = listOf(ListSection(title = region.label, rows = rows))
         )
     }
 
