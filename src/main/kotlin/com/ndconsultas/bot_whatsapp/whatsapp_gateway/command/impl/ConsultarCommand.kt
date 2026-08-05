@@ -235,8 +235,6 @@ class ConsultarCommand(
             return
         }
 
-        sessionManager.setPending(context.from, tipo, info.label)
-
         val isAdmin = adminService.isAdmin(context.from)
         val price = pricingService.getPrice(tipo)
         val priceText = when {
@@ -244,6 +242,9 @@ class ConsultarCommand(
             price > BigDecimal.ZERO -> "\nValor: *R\$ ${"%.2f".format(price)}*"
             else -> ""
         }
+
+        val needsMultiField = tipo in QueryTypeRegistry.CRLV_FULL_INPUT_STATES
+        sessionManager.setPending(context.from, tipo, info.label, nextField = if (needsMultiField) "placa" else null)
 
         whatsappService.sendMessage(
             context.from,
@@ -266,15 +267,11 @@ class ConsultarCommand(
             return
         }
 
-        // Validar input para CRLV com campos múltiplos
+        // Coleta passo a passo para CRLV com placa + renavam + cpf
         if (tipo in QueryTypeRegistry.CRLV_FULL_INPUT_STATES) {
-            val parts = query.split("\\s+".toRegex())
-            if (parts.size < 3) {
-                whatsappService.sendMessage(
-                    context.from,
-                    "Dados insuficientes. Informe *placa*, *renavam* e *cpf* separados por espaço.\n\nExemplo: ABC1234 12345678901 12345678900"
-                )
-                sessionManager.setPending(context.from, tipo, info.label)
+            val pending = sessionManager.getPending(context.from)
+            if (pending != null && pending.nextField != null) {
+                handleCrlvFieldInput(context, whatsappService, tipo, info, query, pending)
                 return
             }
         }
@@ -317,6 +314,59 @@ class ConsultarCommand(
         }
 
         performQuery(context, whatsappService, tipo, info, query)
+    }
+
+    // ── CRLV: Coleta passo a passo (placa → renavam → cpf) ───────
+
+    private fun handleCrlvFieldInput(
+        context: CommandContext,
+        whatsappService: WhatsappService,
+        tipo: String,
+        info: QueryTypeRegistry.QueryTypeInfo,
+        input: String,
+        pending: ConsultationSessionManager.PendingConsultation
+    ) {
+        val fields = pending.collectedFields.toMutableMap()
+
+        when (pending.nextField) {
+            "placa" -> {
+                val placa = input.trim().uppercase()
+                if (placa.isBlank()) {
+                    whatsappService.sendMessage(context.from, "Placa inválida. Informe a *placa* do veículo:")
+                    return
+                }
+                fields["placa"] = placa
+                sessionManager.updatePending(context.from, fields, "renavam")
+                whatsappService.sendMessage(context.from, "Agora informe o *RENAVAM*:")
+            }
+            "renavam" -> {
+                val renavam = input.trim().replace(Regex("[^0-9]"), "")
+                if (renavam.isBlank()) {
+                    whatsappService.sendMessage(context.from, "RENAVAM inválido. Informe o *RENAVAM* (somente números):")
+                    return
+                }
+                fields["renavam"] = renavam
+                sessionManager.updatePending(context.from, fields, "cpf")
+                whatsappService.sendMessage(context.from, "Agora informe o *CPF* do proprietário:")
+            }
+            "cpf" -> {
+                val cpf = input.trim().replace(Regex("[^0-9]"), "")
+                if (cpf.length != 11) {
+                    whatsappService.sendMessage(context.from, "CPF inválido. Informe o *CPF* (11 dígitos):")
+                    return
+                }
+                fields["cpf"] = cpf
+                sessionManager.removePending(context.from)
+
+                // Todos os campos coletados — montar query e executar
+                val fullQuery = "${fields["placa"]} ${fields["renavam"]} ${fields["cpf"]}"
+                val fullCtx = context.copy(
+                    rawMessage = "/consultar $tipo $fullQuery",
+                    args = listOf(tipo, fields["placa"]!!, fields["renavam"]!!, fields["cpf"]!!)
+                )
+                executeQuery(fullCtx, whatsappService)
+            }
+        }
     }
 
     // ── Pagamento PIX ──────────────────────────────────────────────

@@ -14,6 +14,8 @@ class ConsultationSessionManager {
     data class PendingConsultation(
         val tipo: String,
         val tipoLabel: String,
+        val collectedFields: Map<String, String> = emptyMap(),
+        val nextField: String? = null,
         val createdAt: Instant = Instant.now()
     )
 
@@ -24,8 +26,17 @@ class ConsultationSessionManager {
         }
     }
 
-    fun setPending(userId: String, tipo: String, tipoLabel: String) {
-        sessions[userId] = PendingConsultation(tipo, tipoLabel)
+    fun setPending(userId: String, tipo: String, tipoLabel: String, nextField: String? = null) {
+        sessions[userId] = PendingConsultation(tipo, tipoLabel, nextField = nextField)
+    }
+
+    fun updatePending(userId: String, collectedFields: Map<String, String>, nextField: String?) {
+        val pending = sessions[userId] ?: return
+        sessions[userId] = pending.copy(
+            collectedFields = collectedFields,
+            nextField = nextField,
+            createdAt = Instant.now()
+        )
     }
 
     fun getPending(userId: String): PendingConsultation? {

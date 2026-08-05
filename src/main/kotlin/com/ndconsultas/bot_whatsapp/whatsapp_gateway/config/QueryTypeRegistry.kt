@@ -204,12 +204,7 @@ class QueryTypeRegistry {
 
 private fun buildCrlvStateTypes(): Map<String, QueryTypeRegistry.QueryTypeInfo> {
     return QueryTypeRegistry.CRLV_STATES.map { (key, stateName) ->
-        val needsFullInput = key in QueryTypeRegistry.CRLV_FULL_INPUT_STATES
-        val inputPrompt = if (needsFullInput) {
-            "Informe *placa*, *renavam* e *cpf* separados por espaço.\n\nExemplo: ABC1234 12345678901 12345678900"
-        } else {
-            "Informe a *placa* do veiculo"
-        }
+        val inputPrompt = "Informe a *placa* do veiculo"
         key to QueryTypeRegistry.QueryTypeInfo(
             label = "CRLV $stateName",
             inputPrompt = inputPrompt,
