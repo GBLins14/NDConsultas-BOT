@@ -222,7 +222,7 @@ class QueryTypeRegistry {
         "veicular" to CategoryInfo("Consultas Veiculares", "Placa, Chassi, Motor, Renavam, Multas e mais", 7),
         "pessoal" to CategoryInfo("Consultas Pessoais", "Telefone, CPF", 2),
         "leilao" to CategoryInfo("Busca Leilão e Sinistro", "Leilão completo com score", 1),
-        "documentos" to CategoryInfo("Documentos Imediatos", "CRLV-e, CRV — entrega instantânea", 3),
+        "documentos" to CategoryInfo("CRLV-e Imediato", "CRLV-e, CRV — entrega instantânea", 3),
         "documentos_agendados" to CategoryInfo("CRLV-e Agendado", "Solicite e receba quando pronto", 2)
     )
 
