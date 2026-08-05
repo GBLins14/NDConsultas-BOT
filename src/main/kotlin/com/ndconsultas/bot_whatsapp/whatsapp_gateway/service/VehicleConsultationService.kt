@@ -7,6 +7,7 @@ import org.springframework.core.ParameterizedTypeReference
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
+import java.util.Base64
 
 @Service
 class VehicleConsultationService(
@@ -65,6 +66,8 @@ class VehicleConsultationService(
 
                     if (response.statusCode.is2xxSuccessful && contentType.contains("application/pdf")) {
                         ConsultationResult(success = true, pdfBytes = bytes)
+                    } else if (response.statusCode.is2xxSuccessful && tipo == "crv_digital_cod") {
+                        parseBase64PdfResponse(bytes, tipo)
                     } else {
                         val errorMsg = parsePortalError(bytes)
                         log.warn("Erro Portal Despachantes [{}]: status={} error={}", tipo, response.statusCode, errorMsg)
@@ -97,6 +100,38 @@ class VehicleConsultationService(
             "renavam" to parts[1],
             "cpf" to parts[2]
         )
+    }
+
+    private fun parseBase64PdfResponse(bytes: ByteArray, tipo: String): ConsultationResult {
+        return try {
+            val jsonStr = String(bytes, Charsets.UTF_8)
+
+            val successMatch = Regex(""""succe?ss(?:o)?"\s*:\s*(true|false)""").find(jsonStr)
+            val isSuccess = successMatch?.groupValues?.get(1) == "true"
+
+            if (!isSuccess) {
+                val errorMsg = parsePortalError(bytes)
+                log.warn("Erro Portal Despachantes [{}]: {}", tipo, errorMsg)
+                return ConsultationResult(success = false, error = errorMsg)
+            }
+
+            val pdfMatch = Regex(""""pdf_base64"\s*:\s*"([^"]+)"""").find(jsonStr)
+            val pdfBase64 = pdfMatch?.groupValues?.get(1)
+
+            if (pdfBase64.isNullOrBlank()) {
+                log.warn("Resposta crv_digital_cod sem pdf_base64 [{}]", tipo)
+                return ConsultationResult(success = false, error = "PDF nao encontrado na resposta da API.")
+            }
+
+            val pdfBytes = Base64.getDecoder().decode(pdfBase64)
+            ConsultationResult(success = true, pdfBytes = pdfBytes)
+        } catch (e: IllegalArgumentException) {
+            log.error("Erro ao decodificar base64 PDF [{}]: {}", tipo, e.message)
+            ConsultationResult(success = false, error = "Erro ao processar o PDF retornado.")
+        } catch (e: Exception) {
+            log.error("Erro ao processar resposta JSON/PDF [{}]: {}", tipo, e.message, e)
+            ConsultationResult(success = false, error = "Erro ao processar resposta. Tente novamente.")
+        }
     }
 
     private fun parsePortalError(bytes: ByteArray): String {
