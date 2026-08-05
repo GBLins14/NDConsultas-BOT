@@ -23,6 +23,9 @@ central:
 apibrasil:
   bearer-token: ${APIBRASIL_BEARER_TOKEN}
 
+portaldespachantes:
+  chave-acesso: ${PORTAL_DESPACHANTES_CHAVE_ACESSO:}
+
 admin:
   phone-number: ${ADMIN_PHONE_NUMBER}
 

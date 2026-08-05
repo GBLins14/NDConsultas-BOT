@@ -1,5 +1,6 @@
 package com.ndconsultas.bot_whatsapp.whatsapp_gateway.service
 
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.config.QueryTypeRegistry
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.ParameterizedTypeReference
@@ -10,12 +11,14 @@ import org.springframework.web.client.RestClientException
 @Service
 class VehicleConsultationService(
     @Value("\${central.api-key:}") private val apiKey: String,
-    @Value("\${apibrasil.bearer-token:}") private val apiBrasilToken: String
+    @Value("\${apibrasil.bearer-token:}") private val apiBrasilToken: String,
+    @Value("\${portaldespachantes.chave-acesso:}") private val portalChaveAcesso: String
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(VehicleConsultationService::class.java)
         private const val BASE_URL = "https://api-centralduality.com/query"
         private const val APIBRASIL_URL = "https://gateway.apibrasil.io/api/v2/consulta/veiculos/credits"
+        private const val PORTAL_BASE_URL = "https://portaldespachantes.online"
 
         private val APIBRASIL_TYPES = setOf("leilao_completo_score")
     }
@@ -23,12 +26,91 @@ class VehicleConsultationService(
     private val restClient = RestClient.create()
 
     fun consultar(tipo: String, query: String): ConsultationResult {
-        return if (tipo in APIBRASIL_TYPES) {
-            consultarApiBrasil(tipo, query)
-        } else {
-            consultarCentralDuality(tipo, query)
+        return when {
+            QueryTypeRegistry.PORTAL_DESPACHANTES_TYPES.contains(tipo) ->
+                consultarPortalDespachantes(tipo, query)
+            tipo in APIBRASIL_TYPES ->
+                consultarApiBrasil(tipo, query)
+            else ->
+                consultarCentralDuality(tipo, query)
         }
     }
+
+    // ── Portal Despachantes (CRLV-e / CRV) ─────────────────────────
+
+    private fun consultarPortalDespachantes(tipo: String, query: String): ConsultationResult {
+        if (portalChaveAcesso.isBlank()) {
+            return ConsultationResult(success = false, error = "Chave de acesso do Portal Despachantes nao configurada. Contate o administrador.")
+        }
+
+        val endpoint = when {
+            tipo.startsWith("crlv_") -> "/consultar-crlv-${tipo.removePrefix("crlv_")}"
+            tipo == "crv_codigo" -> "/consultar-crv"
+            tipo == "crv_digital_cod" -> "/consultar-crv-cod"
+            else -> return ConsultationResult(success = false, error = "Tipo invalido: $tipo")
+        }
+
+        val body = buildPortalRequestBody(tipo, query)
+            ?: return ConsultationResult(success = false, error = "Dados insuficientes. Verifique o formato informado.")
+
+        return try {
+            restClient.post()
+                .uri("$PORTAL_BASE_URL$endpoint")
+                .header("Content-Type", "application/json")
+                .header("chaveAcesso", portalChaveAcesso)
+                .body(body)
+                .exchange { _, response ->
+                    val bytes = response.body.readAllBytes()
+                    val contentType = response.headers.contentType?.toString() ?: ""
+
+                    if (response.statusCode.is2xxSuccessful && contentType.contains("application/pdf")) {
+                        ConsultationResult(success = true, pdfBytes = bytes)
+                    } else {
+                        val errorMsg = parsePortalError(bytes)
+                        log.warn("Erro Portal Despachantes [{}]: status={} error={}", tipo, response.statusCode, errorMsg)
+                        ConsultationResult(success = false, error = errorMsg)
+                    }
+                }
+        } catch (e: RestClientException) {
+            log.error("Erro ao consultar Portal Despachantes [{}]: {}", tipo, e.message, e)
+            ConsultationResult(success = false, error = "Erro de comunicacao com o Portal Despachantes. Tente novamente mais tarde.")
+        } catch (e: Exception) {
+            log.error("Erro inesperado Portal Despachantes [{}]: {}", tipo, e.message, e)
+            ConsultationResult(success = false, error = "Erro inesperado. Tente novamente.")
+        }
+    }
+
+    private fun buildPortalRequestBody(tipo: String, query: String): Map<String, String>? {
+        val needsFullInput = tipo in QueryTypeRegistry.CRLV_FULL_INPUT_STATES
+
+        if (!needsFullInput) {
+            val placa = query.trim().uppercase()
+            if (placa.isBlank()) return null
+            return mapOf("placa" to placa)
+        }
+
+        val parts = query.trim().split("\\s+".toRegex())
+        if (parts.size < 3) return null
+
+        return mapOf(
+            "placa" to parts[0].uppercase(),
+            "renavam" to parts[1],
+            "cpf" to parts[2]
+        )
+    }
+
+    private fun parsePortalError(bytes: ByteArray): String {
+        return try {
+            val jsonStr = String(bytes, Charsets.UTF_8)
+            val match = Regex(""""(?:error|erro|message)"\s*:\s*"([^"]+)"""").find(jsonStr)
+            match?.groupValues?.get(1)
+                ?: "Erro desconhecido do Portal Despachantes."
+        } catch (e: Exception) {
+            "Erro ao processar resposta do Portal Despachantes."
+        }
+    }
+
+    // ── Central Duality ─────────────────────────────────────────────
 
     private fun consultarCentralDuality(tipo: String, query: String): ConsultationResult {
         if (apiKey.isBlank()) {
@@ -71,6 +153,8 @@ class VehicleConsultationService(
             ConsultationResult(success = false, error = "Erro inesperado. Tente novamente.")
         }
     }
+
+    // ── API Brasil ──────────────────────────────────────────────────
 
     private fun consultarApiBrasil(tipo: String, query: String): ConsultationResult {
         if (apiBrasilToken.isBlank()) {
@@ -136,5 +220,6 @@ data class ConsultationResult(
     val data: Map<String, Any?> = emptyMap(),
     val error: String? = null,
     val custo: String? = null,
-    val saldoRestante: String? = null
+    val saldoRestante: String? = null,
+    val pdfBytes: ByteArray? = null
 )

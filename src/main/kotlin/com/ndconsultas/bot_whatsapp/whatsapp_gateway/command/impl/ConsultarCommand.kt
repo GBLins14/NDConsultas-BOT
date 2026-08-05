@@ -62,6 +62,7 @@ class ConsultarCommand(
             context.args[0] == "pgto_pix" -> handlePixPayment(context, whatsappService)
             context.args[0] == "pgto_cartao" -> startCardPayment(context, whatsappService)
             context.args[0] == "cartao_input" -> handleCardInput(context, whatsappService)
+            context.args[0] == "crlv_digital" && context.args.size == 1 -> showCrlvStates(context, whatsappService)
             context.args.size == 1 -> promptForData(context, whatsappService)
             else -> executeQuery(context, whatsappService)
         }
@@ -124,6 +125,43 @@ class ConsultarCommand(
         showCategories(context, whatsappService)
     }
 
+    // ── CRLV: Seleção de estado ────────────────────────────────────
+
+    private fun showCrlvStates(context: CommandContext, whatsappService: WhatsappService) {
+        val isAdmin = adminService.isAdmin(context.from)
+
+        val sections = QueryTypeRegistry.CRLV_REGIONS.map { (regionName, stateKeys) ->
+            val rows = stateKeys
+                .filter { isAdmin || pricingService.isModuleEnabled(it) }
+                .mapNotNull { key ->
+                    val stateName = QueryTypeRegistry.CRLV_STATES[key] ?: return@mapNotNull null
+                    ListRow(
+                        id = "/consultar $key",
+                        title = stateName,
+                        description = "CRLV-e $stateName"
+                    )
+                }
+            ListSection(title = regionName, rows = rows)
+        }.filter { it.rows.isNotEmpty() }
+
+        if (sections.isEmpty()) {
+            whatsappService.sendMessage(
+                context.from,
+                "Nenhum estado disponível para CRLV-e no momento."
+            )
+            return
+        }
+
+        whatsappService.sendList(
+            to = context.from,
+            header = "CRLV Digital (CRLV-e)",
+            body = "Selecione o *estado* para emissão do CRLV-e:",
+            buttonLabel = "Ver Estados",
+            footer = "ND Consultas",
+            sections = sections
+        )
+    }
+
     // ── Step 3: Solicitar dado ──────────────────────────────────────
 
     private fun promptForData(context: CommandContext, whatsappService: WhatsappService) {
@@ -167,6 +205,19 @@ class ConsultarCommand(
                 "Tipo de consulta inválido ou indisponível.\nUse /consultar para ver as opções disponíveis."
             )
             return
+        }
+
+        // Validar input para CRLV com campos múltiplos
+        if (tipo in QueryTypeRegistry.CRLV_FULL_INPUT_STATES) {
+            val parts = query.split("\\s+".toRegex())
+            if (parts.size < 3) {
+                whatsappService.sendMessage(
+                    context.from,
+                    "Dados insuficientes. Informe *placa*, *renavam* e *cpf* separados por espaço.\n\nExemplo: ABC1234 12345678901 12345678900"
+                )
+                sessionManager.setPending(context.from, tipo, info.label)
+                return
+            }
         }
 
         sessionManager.removePending(context.from)
@@ -528,11 +579,15 @@ class ConsultarCommand(
             }
         }
 
-        val pdfSent = trySendPdf(context, whatsappService, info, tipo, query, result.data)
-
-        if (!pdfSent) {
-            log.warn("Fallback para envio de texto — PDF falhou para {} query={}", tipo, query)
-            sendResultAsText(context, whatsappService, info, query, result.data)
+        // PDF direto da API (CRLV-e / CRV)
+        if (result.pdfBytes != null) {
+            sendDirectPdf(context, whatsappService, info, tipo, query, result.pdfBytes)
+        } else {
+            val pdfSent = trySendPdf(context, whatsappService, info, tipo, query, result.data)
+            if (!pdfSent) {
+                log.warn("Fallback para envio de texto — PDF falhou para {} query={}", tipo, query)
+                sendResultAsText(context, whatsappService, info, query, result.data)
+            }
         }
 
         whatsappService.sendButtons(
@@ -545,7 +600,38 @@ class ConsultarCommand(
         )
     }
 
-    // ── Envio de PDF ───────────────────────────────────────────────
+    // ── Envio de PDF direto (Portal Despachantes) ─────────────────
+
+    private fun sendDirectPdf(
+        context: CommandContext,
+        whatsappService: WhatsappService,
+        info: QueryTypeRegistry.QueryTypeInfo,
+        tipo: String,
+        query: String,
+        pdfBytes: ByteArray
+    ) {
+        try {
+            val timestamp = LocalDateTime.now().format(FILE_DATE_FMT)
+            val filename = "${tipo}_${timestamp}.pdf"
+
+            val mediaId = whatsappService.uploadMedia(pdfBytes, "application/pdf", filename)
+
+            whatsappService.sendDocumentById(
+                to = context.from,
+                mediaId = mediaId,
+                filename = filename,
+                caption = "${info.label} - $query"
+            )
+        } catch (e: Exception) {
+            log.error("Erro ao enviar PDF direto [{}] query={}: {}", tipo, query, e.message, e)
+            whatsappService.sendMessage(
+                context.from,
+                "O documento foi gerado com sucesso, mas houve um erro ao enviar o PDF. Tente novamente."
+            )
+        }
+    }
+
+    // ── Envio de PDF gerado ───────────────────────────────────────
 
     private fun trySendPdf(
         context: CommandContext,

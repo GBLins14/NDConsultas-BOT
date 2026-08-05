@@ -20,6 +20,48 @@ class QueryTypeRegistry {
         val count: Int
     )
 
+    companion object {
+        val CRLV_FULL_INPUT_STATES = setOf(
+            "crlv_ac", "crlv_ap", "crlv_ba", "crlv_go", "crlv_ma",
+            "crlv_mg", "crlv_mt", "crlv_pa", "crlv_pr", "crlv_rr", "crlv_to"
+        )
+
+        val PORTAL_DESPACHANTES_TYPES: Set<String> by lazy {
+            CRLV_STATES.keys + setOf("crv_codigo", "crv_digital_cod")
+        }
+
+        val CRLV_STATES = linkedMapOf(
+            "crlv_ac" to "Acre",
+            "crlv_al" to "Alagoas",
+            "crlv_ap" to "Amapá",
+            "crlv_ba" to "Bahia",
+            "crlv_ce" to "Ceará",
+            "crlv_df" to "Distrito Federal",
+            "crlv_go" to "Goiás",
+            "crlv_ma" to "Maranhão",
+            "crlv_mg" to "Minas Gerais",
+            "crlv_ms" to "Mato Grosso do Sul",
+            "crlv_mt" to "Mato Grosso",
+            "crlv_pa" to "Pará",
+            "crlv_pe" to "Pernambuco",
+            "crlv_pi" to "Piauí",
+            "crlv_pr" to "Paraná",
+            "crlv_rj" to "Rio de Janeiro",
+            "crlv_ro" to "Rondônia",
+            "crlv_rr" to "Roraima",
+            "crlv_se" to "Sergipe",
+            "crlv_sp" to "São Paulo",
+            "crlv_to" to "Tocantins"
+        )
+
+        val CRLV_REGIONS = linkedMapOf(
+            "Norte" to listOf("crlv_ac", "crlv_ap", "crlv_pa", "crlv_ro", "crlv_rr", "crlv_to"),
+            "Nordeste" to listOf("crlv_al", "crlv_ba", "crlv_ce", "crlv_ma", "crlv_pe", "crlv_pi", "crlv_se"),
+            "Centro-Oeste" to listOf("crlv_df", "crlv_go", "crlv_ms", "crlv_mt"),
+            "Sudeste e Sul" to listOf("crlv_mg", "crlv_pr", "crlv_rj", "crlv_sp")
+        )
+    }
+
     val types = mapOf(
         // ── Consultas Veiculares ────────────────────────────────────
         "placa_serpro" to QueryTypeInfo(
@@ -105,13 +147,45 @@ class QueryTypeRegistry {
             description = "Consulta completa de leilao e sinistro com score.",
             returnSummary = "Score, Leilao, Sinistro, Veiculo",
             returnDetails = "Score do Veiculo, Pontuacao, Aceitacao, Historico de Leilao, Leiloeiro, Data do Leilao, Lote, Comitente, Patio, Condicao Geral, Condicao Motor, Condicao Cambio, Situacao do Chassi, Indicios de Sinistro, Dados do Veiculo (Placa, Chassi, RENAVAM, Marca/Modelo, Ano, Cor, Kilometragem, Combustivel)."
-        )
+        ),
+
+        // ── Documentos Digitais — Meta-módulo CRLV ──────────────────
+        "crlv_digital" to QueryTypeInfo(
+            label = "CRLV Digital (CRLV-e)",
+            inputPrompt = "",
+            category = "documentos",
+            description = "Emissão do CRLV-e (Certificado de Registro e Licenciamento do Veículo eletrônico).",
+            returnSummary = "PDF do CRLV-e",
+            returnDetails = "Documento CRLV-e em PDF do estado selecionado."
+        ),
+
+        // ── Documentos Digitais — CRV ───────────────────────────────
+        "crv_codigo" to QueryTypeInfo(
+            label = "Código Segurança CRV",
+            inputPrompt = "Informe a *placa* do veiculo",
+            category = "documentos",
+            description = "Consulta o código de segurança do CRV.",
+            returnSummary = "PDF com Código CRV",
+            returnDetails = "Documento PDF com o código de segurança do CRV."
+        ),
+        "crv_digital_cod" to QueryTypeInfo(
+            label = "CRV Digital + Código",
+            inputPrompt = "Informe a *placa* do veiculo",
+            category = "documentos",
+            description = "CRV Digital completo com código de segurança (JSON + PDF via API).",
+            returnSummary = "PDF CRV Digital + Código",
+            returnDetails = "Documento PDF do CRV Digital com código de segurança."
+        ),
+
+        // ── CRLV por estado (ocultos — acessados via seleção de estado) ──
+        *buildCrlvStateTypes().toList().toTypedArray()
     )
 
     val categories = linkedMapOf(
         "veicular" to CategoryInfo("Consultas Veiculares", "Placa, Chassi, Motor, Renavam, Multas e mais", 7),
         "pessoal" to CategoryInfo("Consultas Pessoais", "Telefone, CPF", 2),
-        "leilao" to CategoryInfo("Busca Leilão e Sinistro", "Leilão completo com score", 1)
+        "leilao" to CategoryInfo("Busca Leilão e Sinistro", "Leilão completo com score", 1),
+        "documentos" to CategoryInfo("Documentos Digitais", "CRLV-e, CRV, Código de Segurança", 3)
     )
 
     fun getTypeLabel(tipo: String): String = types[tipo]?.label ?: tipo
@@ -120,4 +194,27 @@ class QueryTypeRegistry {
 
     fun getTypesForCategory(category: String): Map<String, QueryTypeInfo> =
         types.filter { it.value.category == category }
+
+    fun isCrlvState(tipo: String): Boolean = tipo in CRLV_STATES
+
+    fun isPortalDespachantesType(tipo: String): Boolean = tipo in PORTAL_DESPACHANTES_TYPES
+}
+
+private fun buildCrlvStateTypes(): Map<String, QueryTypeRegistry.QueryTypeInfo> {
+    return QueryTypeRegistry.CRLV_STATES.map { (key, stateName) ->
+        val needsFullInput = key in QueryTypeRegistry.CRLV_FULL_INPUT_STATES
+        val inputPrompt = if (needsFullInput) {
+            "Informe *placa*, *renavam* e *cpf* separados por espaço.\n\nExemplo: ABC1234 12345678901 12345678900"
+        } else {
+            "Informe a *placa* do veiculo"
+        }
+        key to QueryTypeRegistry.QueryTypeInfo(
+            label = "CRLV $stateName",
+            inputPrompt = inputPrompt,
+            category = "_crlv",
+            description = "Emissão do CRLV-e para o estado de $stateName.",
+            returnSummary = "PDF do CRLV-e",
+            returnDetails = "Documento CRLV-e em PDF."
+        )
+    }.toMap()
 }
