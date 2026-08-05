@@ -66,6 +66,8 @@ class AdminCommand(
             "unblock" -> handleUnblock(context, whatsappService)
             "status" -> showFullStatus(context, whatsappService)
             "reset" -> handleReset(context, whatsappService)
+            "suporte", "suporte_phone" -> handleSetSupportPhone(context, whatsappService)
+            "rm_suporte" -> handleRemoveSupportPhone(context, whatsappService)
             // Administradores (somente super admin)
             "admins" -> showAdmins(context, whatsappService)
             "addadmin" -> handleAddAdmin(context, whatsappService)
@@ -396,6 +398,9 @@ class AdminCommand(
     }
 
     private fun showControleMenu(context: CommandContext, whatsappService: WhatsappService) {
+        val currentSupport = adminService.getSupportPhone()
+        val supportText = if (currentSupport != null) "Suporte atual: $currentSupport" else "Suporte: nao configurado"
+
         whatsappService.sendMessage(
             context.from,
             buildString {
@@ -403,10 +408,24 @@ class AdminCommand(
                 append("Gerencie o funcionamento geral do bot.\n\n")
                 append("*Bloquear* — Impede TODOS os clientes de fazer consultas (você continua consultando)\n")
                 append("*Liberar* — Reativa as consultas para todos\n")
+                append("*Suporte* — Define o numero de suporte para os clientes\n")
                 append("*Status* — Relatório completo de todas as métricas\n")
-                append("*Reset* — Zera contadores de estatísticas e pagamentos (preços e bans não são afetados)")
+                append("*Reset* — Zera contadores de estatísticas e pagamentos (preços e bans não são afetados)\n\n")
+                append("_${supportText}_")
             }
         )
+
+        val rows = mutableListOf(
+            ListRow("/admin block", "Bloquear Consultas", "Impedir novas consultas"),
+            ListRow("/admin unblock", "Liberar Consultas", "Reativar consultas"),
+            ListRow("/admin suporte", "Definir Suporte", "Numero de atendimento"),
+            ListRow("/admin status", "Status Completo", "Todas as métricas do bot"),
+            ListRow("/admin reset", "Resetar Contadores", "Zerar estatísticas")
+        )
+
+        if (currentSupport != null) {
+            rows.add(3, ListRow("/admin rm_suporte", "Remover Suporte", "Desativar atendimento"))
+        }
 
         whatsappService.sendList(
             to = context.from,
@@ -414,17 +433,7 @@ class AdminCommand(
             body = "Selecione uma ação:",
             buttonLabel = "Ações",
             footer = "ND Consultas | Admin",
-            sections = listOf(
-                ListSection(
-                    title = "Controle",
-                    rows = listOf(
-                        ListRow("/admin block", "Bloquear Consultas", "Impedir novas consultas"),
-                        ListRow("/admin unblock", "Liberar Consultas", "Reativar consultas"),
-                        ListRow("/admin status", "Status Completo", "Todas as métricas do bot"),
-                        ListRow("/admin reset", "Resetar Contadores", "Zerar estatísticas")
-                    )
-                )
-            )
+            sections = listOf(ListSection(title = "Controle", rows = rows))
         )
     }
 
@@ -1166,6 +1175,42 @@ class AdminCommand(
             context.from,
             "*Contadores resetados*\n\nEstatísticas de consultas e pagamentos foram zeradas.\nPreços, módulos e bans *não* foram afetados."
         )
+        sendBackButton(context, whatsappService, "controle")
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // SUPORTE
+    // ══════════════════════════════════════════════════════════════════
+
+    private fun handleSetSupportPhone(context: CommandContext, whatsappService: WhatsappService) {
+        val phone = context.args.getOrNull(1)
+
+        if (phone.isNullOrBlank()) {
+            adminService.setPendingAction(context.from, "suporte_phone")
+            whatsappService.sendMessage(
+                context.from,
+                "*Definir Telefone de Suporte*\n\nInforme o numero de telefone com DDD e codigo do pais.\nExemplo: 5581999999999"
+            )
+            return
+        }
+
+        val normalized = phone.replace(Regex("[^0-9]"), "")
+        if (normalized.length < 10) {
+            whatsappService.sendMessage(context.from, "Numero invalido. Informe com DDD e codigo do pais (ex: 5581999999999).")
+            return
+        }
+
+        adminService.setSupportPhone(normalized)
+        whatsappService.sendMessage(
+            context.from,
+            "*Telefone de suporte definido!*\n\nNumero: $normalized\nLink: https://wa.me/$normalized"
+        )
+        sendBackButton(context, whatsappService, "controle")
+    }
+
+    private fun handleRemoveSupportPhone(context: CommandContext, whatsappService: WhatsappService) {
+        adminService.removeSupportPhone()
+        whatsappService.sendMessage(context.from, "*Telefone de suporte removido.*\n\nOs clientes nao terao a opcao de suporte ate que um novo numero seja definido.")
         sendBackButton(context, whatsappService, "controle")
     }
 

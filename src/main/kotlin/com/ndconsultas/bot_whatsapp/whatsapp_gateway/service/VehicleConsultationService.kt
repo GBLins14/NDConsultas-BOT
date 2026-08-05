@@ -248,7 +248,141 @@ class VehicleConsultationService(
             ConsultationResult(success = false, error = "Erro inesperado. Tente novamente.")
         }
     }
+
+    // ── CRLV Agendado ──────────────────────────────────────────────
+
+    fun solicitarCrlvAgendado(uf: String, placa: String, renavam: String? = null, cpf: String? = null): AgendadoSolicitarResult {
+        if (portalChaveAcesso.isBlank()) {
+            return AgendadoSolicitarResult(success = false, error = "Chave de acesso nao configurada. Contate o administrador.")
+        }
+
+        val body = mutableMapOf<String, Any>("placa" to placa.uppercase(), "uf" to uf.lowercase())
+        if (!renavam.isNullOrBlank()) body["renavam"] = renavam
+        if (!cpf.isNullOrBlank()) body["cpf"] = cpf
+
+        return try {
+            val response = restClient.post()
+                .uri("$PORTAL_BASE_URL/api/crlv-agendado/solicitar")
+                .header("Content-Type", "application/json")
+                .header("chaveAcesso", portalChaveAcesso)
+                .body(body)
+                .retrieve()
+                .body(object : ParameterizedTypeReference<Map<String, Any?>>() {})
+
+            if (response == null) {
+                return AgendadoSolicitarResult(success = false, error = "Resposta vazia da API.")
+            }
+
+            if (response["success"] != true) {
+                val error = response["error"]?.toString() ?: "Erro ao solicitar CRLV agendado."
+                return AgendadoSolicitarResult(success = false, error = error)
+            }
+
+            AgendadoSolicitarResult(
+                success = true,
+                pedidoId = (response["pedido_id"] as? Number)?.toLong(),
+                status = response["status"]?.toString(),
+                uf = response["uf"]?.toString()
+            )
+        } catch (e: RestClientException) {
+            log.error("Erro ao solicitar CRLV agendado [{}]: {}", uf, e.message, e)
+            AgendadoSolicitarResult(success = false, error = "Erro de comunicacao. Tente novamente mais tarde.")
+        } catch (e: Exception) {
+            log.error("Erro inesperado ao solicitar CRLV agendado [{}]: {}", uf, e.message, e)
+            AgendadoSolicitarResult(success = false, error = "Erro inesperado. Tente novamente.")
+        }
+    }
+
+    fun consultarStatusAgendado(pedidoId: Long): AgendadoStatusResult {
+        if (portalChaveAcesso.isBlank()) {
+            return AgendadoStatusResult(success = false, error = "Chave de acesso nao configurada.")
+        }
+
+        return try {
+            val response = restClient.get()
+                .uri("$PORTAL_BASE_URL/api/crlv-agendado/{id}", pedidoId)
+                .header("Content-Type", "application/json")
+                .header("chaveAcesso", portalChaveAcesso)
+                .retrieve()
+                .body(object : ParameterizedTypeReference<Map<String, Any?>>() {})
+
+            if (response == null) {
+                return AgendadoStatusResult(success = false, error = "Resposta vazia.")
+            }
+
+            @Suppress("UNCHECKED_CAST")
+            val pedido = response["pedido"] as? Map<String, Any?>
+            @Suppress("UNCHECKED_CAST")
+            val statusResumo = response["status_resumo"] as? Map<String, Any?>
+
+            AgendadoStatusResult(
+                success = true,
+                pedidoId = (pedido?.get("id") as? Number)?.toLong(),
+                status = pedido?.get("status")?.toString(),
+                statusNormalizado = pedido?.get("status_normalizado")?.toString(),
+                cancelado = statusResumo?.get("cancelado") == true,
+                mensagemAdmin = response["mensagem_admin"]?.toString(),
+                pdfDisponivel = response["pdf_disponivel"] == true
+            )
+        } catch (e: RestClientException) {
+            log.warn("Erro ao consultar status CRLV agendado [{}]: {}", pedidoId, e.message)
+            AgendadoStatusResult(success = false, error = "Erro de comunicacao.")
+        } catch (e: Exception) {
+            log.error("Erro inesperado ao consultar status [{}]: {}", pedidoId, e.message, e)
+            AgendadoStatusResult(success = false, error = "Erro inesperado.")
+        }
+    }
+
+    fun baixarPdfAgendado(pedidoId: Long): ConsultationResult {
+        if (portalChaveAcesso.isBlank()) {
+            return ConsultationResult(success = false, error = "Chave de acesso nao configurada.")
+        }
+
+        return try {
+            restClient.get()
+                .uri("$PORTAL_BASE_URL/api/crlv-agendado/{id}/pdf", pedidoId)
+                .header("Content-Type", "application/json")
+                .header("chaveAcesso", portalChaveAcesso)
+                .exchange { _, response ->
+                    val bytes = response.body.readAllBytes()
+                    val contentType = response.headers.contentType?.toString() ?: ""
+
+                    if (response.statusCode.is2xxSuccessful && contentType.contains("application/pdf")) {
+                        ConsultationResult(success = true, pdfBytes = bytes)
+                    } else {
+                        val errorMsg = parsePortalError(bytes)
+                        log.warn("Erro ao baixar PDF agendado [{}]: {}", pedidoId, errorMsg)
+                        ConsultationResult(success = false, error = errorMsg)
+                    }
+                }
+        } catch (e: RestClientException) {
+            log.error("Erro ao baixar PDF agendado [{}]: {}", pedidoId, e.message, e)
+            ConsultationResult(success = false, error = "Erro de comunicacao.")
+        } catch (e: Exception) {
+            log.error("Erro inesperado ao baixar PDF agendado [{}]: {}", pedidoId, e.message, e)
+            ConsultationResult(success = false, error = "Erro inesperado.")
+        }
+    }
 }
+
+data class AgendadoSolicitarResult(
+    val success: Boolean,
+    val pedidoId: Long? = null,
+    val status: String? = null,
+    val uf: String? = null,
+    val error: String? = null
+)
+
+data class AgendadoStatusResult(
+    val success: Boolean,
+    val pedidoId: Long? = null,
+    val status: String? = null,
+    val statusNormalizado: String? = null,
+    val cancelado: Boolean = false,
+    val mensagemAdmin: String? = null,
+    val pdfDisponivel: Boolean = false,
+    val error: String? = null
+)
 
 data class ConsultationResult(
     val success: Boolean,

@@ -24,6 +24,7 @@ class ConfigPersistenceService(
     companion object {
         private val log = LoggerFactory.getLogger(ConfigPersistenceService::class.java)
         private const val KEY_BOT_BLOCKED = "botBlocked"
+        private const val KEY_SUPPORT_PHONE = "supportPhone"
     }
 
     // ── Carrega tudo do banco ao iniciar ───────────────────────────
@@ -41,6 +42,9 @@ class ConfigPersistenceService(
             adminRepo.findAll().forEach { adminService.loadAdminNumber(it.phone) }
             settingRepo.findById(KEY_BOT_BLOCKED).ifPresent {
                 if (it.value == "true") adminService.loadBotBlocked()
+            }
+            settingRepo.findById(KEY_SUPPORT_PHONE).ifPresent {
+                if (it.value.isNotBlank()) adminService.loadSupportPhone(it.value)
             }
 
             log.info(
@@ -130,5 +134,21 @@ class ConfigPersistenceService(
     fun saveBotBlocked(blocked: Boolean) {
         runCatching { settingRepo.save(BotSettingEntity(KEY_BOT_BLOCKED, blocked.toString())) }
             .onFailure { log.error("Falha ao persistir estado do bot: {}", it.message) }
+    }
+
+    // ── Telefone de suporte ───────────────────────────────────────
+
+    @Async
+    @Transactional
+    fun saveSupportPhone(phone: String) {
+        runCatching { settingRepo.save(BotSettingEntity(KEY_SUPPORT_PHONE, phone)) }
+            .onFailure { log.error("Falha ao persistir telefone de suporte: {}", it.message) }
+    }
+
+    @Async
+    @Transactional
+    fun deleteSupportPhone() {
+        runCatching { settingRepo.deleteById(KEY_SUPPORT_PHONE) }
+            .onFailure { log.error("Falha ao remover telefone de suporte: {}", it.message) }
     }
 }

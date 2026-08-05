@@ -14,12 +14,16 @@ import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PaymentSessionManag
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PaymentStats
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PdfReportService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PricingService
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ScheduledCrlvPoller
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.VehicleConsultationService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.WhatsappService
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.persistence.ScheduledCrlvOrderEntity
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.persistence.ScheduledCrlvOrderRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.math.BigDecimal
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Component
@@ -33,7 +37,8 @@ class ConsultarCommand(
     private val paymentSessionManager: PaymentSessionManager,
     private val paymentStats: PaymentStats,
     private val paymentService: PaymentService,
-    private val queryTypeRegistry: QueryTypeRegistry
+    private val queryTypeRegistry: QueryTypeRegistry,
+    private val scheduledCrlvOrderRepository: ScheduledCrlvOrderRepository
 ) : BotCommand {
 
     override val name = "/consultar"
@@ -64,6 +69,8 @@ class ConsultarCommand(
             context.args[0] == "cartao_input" -> handleCardInput(context, whatsappService)
             context.args[0] == "crlv_digital" && context.args.size == 1 -> showCrlvRegions(context, whatsappService)
             context.args[0] == "crlv_regiao" && context.args.size >= 2 -> showCrlvRegionStates(context, whatsappService)
+            context.args[0] == "crlv_agendado" && context.args.size == 1 -> showCrlvAgendadoStates(context, whatsappService)
+            context.args[0] == "status_agendado" -> showScheduledCrlvStatus(context, whatsappService)
             context.args.size == 1 -> promptForData(context, whatsappService)
             else -> executeQuery(context, whatsappService)
         }
@@ -236,14 +243,15 @@ class ConsultarCommand(
         }
 
         val isAdmin = adminService.isAdmin(context.from)
-        val price = pricingService.getPrice(tipo)
+        val price = getEffectivePrice(tipo)
         val priceText = when {
             isAdmin -> ""
             price > BigDecimal.ZERO -> "\nValor: *R\$ ${"%.2f".format(price)}*"
             else -> ""
         }
 
-        val needsMultiField = tipo in QueryTypeRegistry.CRLV_FULL_INPUT_STATES
+        val needsMultiField = tipo in QueryTypeRegistry.CRLV_FULL_INPUT_STATES ||
+            tipo in QueryTypeRegistry.CRLV_AGENDADO_FULL_INPUT_STATES
         sessionManager.setPending(context.from, tipo, info.label, nextField = if (needsMultiField) "placa" else null)
 
         whatsappService.sendMessage(
@@ -268,7 +276,8 @@ class ConsultarCommand(
         }
 
         // Coleta passo a passo para CRLV com placa + renavam + cpf
-        if (tipo in QueryTypeRegistry.CRLV_FULL_INPUT_STATES) {
+        if (tipo in QueryTypeRegistry.CRLV_FULL_INPUT_STATES ||
+            tipo in QueryTypeRegistry.CRLV_AGENDADO_FULL_INPUT_STATES) {
             val pending = sessionManager.getPending(context.from)
             if (pending != null && pending.nextField != null) {
                 handleCrlvFieldInput(context, whatsappService, tipo, info, query, pending)
@@ -278,7 +287,7 @@ class ConsultarCommand(
 
         sessionManager.removePending(context.from)
 
-        val price = pricingService.getPrice(tipo)
+        val price = getEffectivePrice(tipo)
         val isAdmin = adminService.isAdmin(context.from)
 
         // Admin nunca paga
@@ -313,7 +322,11 @@ class ConsultarCommand(
             }
         }
 
-        performQuery(context, whatsappService, tipo, info, query)
+        if (queryTypeRegistry.isAgendadoType(tipo)) {
+            submitScheduledCrlv(context, whatsappService, tipo, info, query)
+        } else {
+            performQuery(context, whatsappService, tipo, info, query)
+        }
     }
 
     // ── CRLV: Coleta passo a passo (placa → renavam → cpf) ───────
@@ -366,6 +379,213 @@ class ConsultarCommand(
                 )
                 executeQuery(fullCtx, whatsappService)
             }
+        }
+    }
+
+    // ── CRLV Agendado: Seleção de estado ─────────────────────────
+
+    private fun showCrlvAgendadoStates(context: CommandContext, whatsappService: WhatsappService) {
+        val isAdmin = adminService.isAdmin(context.from)
+
+        val rows = QueryTypeRegistry.CRLV_AGENDADO_STATES.mapNotNull { (key, stateName) ->
+            if (!isAdmin && !pricingService.isModuleEnabled("crlv_agendado")) return@mapNotNull null
+
+            ListRow(
+                id = "/consultar $key",
+                title = stateName,
+                description = "CRLV-e Agendado $stateName"
+            )
+        }
+
+        if (rows.isEmpty()) {
+            whatsappService.sendMessage(context.from, "Nenhum estado disponivel para CRLV-e agendado no momento.")
+            return
+        }
+
+        whatsappService.sendList(
+            to = context.from,
+            header = "CRLV-e Agendado",
+            body = "Selecione o *estado* para solicitar o CRLV-e agendado:\n\n_O documento sera processado e enviado quando estiver pronto._",
+            buttonLabel = "Ver Estados",
+            footer = "ND Consultas",
+            sections = listOf(ListSection(title = "Estados Disponiveis", rows = rows))
+        )
+    }
+
+    // ── CRLV Agendado: Solicitar ──────────────────────────────────
+
+    private fun submitScheduledCrlv(
+        context: CommandContext,
+        whatsappService: WhatsappService,
+        tipo: String,
+        info: QueryTypeRegistry.QueryTypeInfo,
+        query: String
+    ) {
+        val uf = tipo.removePrefix("crlvag_")
+        val parts = query.trim().split("\\s+".toRegex())
+        val placa = parts[0].uppercase()
+        val renavam = parts.getOrNull(1)
+        val cpf = parts.getOrNull(2)
+
+        whatsappService.sendMessage(
+            context.from,
+            "Solicitando *CRLV-e Agendado*...\nAguarde um momento"
+        )
+
+        val result = consultationService.solicitarCrlvAgendado(uf, placa, renavam, cpf)
+
+        if (!result.success || result.pedidoId == null) {
+            whatsappService.sendMessage(
+                context.from,
+                "*Erro na solicitacao*\n\n${result.error ?: "Erro desconhecido."}"
+            )
+            whatsappService.sendButtons(
+                to = context.from,
+                body = "O que deseja fazer?",
+                buttons = listOf(
+                    Button(id = "/consultar $tipo", title = "Tentar Novamente"),
+                    Button(id = "/consultar", title = "Outra Consulta"),
+                    Button(id = "/start", title = "Menu Inicial")
+                )
+            )
+
+            if (!ScheduledCrlvPoller.isUserError(result.error)) {
+                val stateName = QueryTypeRegistry.CRLV_AGENDADO_STATES[tipo] ?: uf.uppercase()
+                notifyAdmin(
+                    whatsappService,
+                    buildString {
+                        append("*ALERTA: Falha ao solicitar CRLV Agendado*\n\n")
+                        append("Estado: *$stateName*\n")
+                        append("Placa: *$placa*\n")
+                        append("Cliente: ${context.from}\n")
+                        append("Erro: ${result.error ?: "Erro desconhecido"}\n\n")
+                        append("O cliente pode ter sido cobrado. Verifique.")
+                    }
+                )
+            }
+            return
+        }
+
+        scheduledCrlvOrderRepository.save(
+            ScheduledCrlvOrderEntity(
+                pedidoId = result.pedidoId,
+                userPhone = context.from,
+                uf = uf,
+                placa = placa,
+                renavam = renavam,
+                cpf = cpf
+            )
+        )
+
+        val stateName = QueryTypeRegistry.CRLV_AGENDADO_STATES[tipo] ?: uf.uppercase()
+
+        whatsappService.sendMessage(
+            context.from,
+            buildString {
+                append("*Solicitacao Enviada!*\n\n")
+                append("CRLV-e Agendado — *$stateName*\n")
+                append("Placa: *$placa*\n")
+                append("Pedido: *#${result.pedidoId}*\n\n")
+                append("Voce recebera o documento assim que estiver pronto.\n")
+                append("Para acompanhar, use *Ver Status de Pedidos* no painel.")
+            }
+        )
+
+        whatsappService.sendButtons(
+            to = context.from,
+            body = "O que deseja fazer?",
+            buttons = listOf(
+                Button(id = "/consultar status_agendado", title = "Ver Status"),
+                Button(id = "/consultar", title = "Nova Consulta"),
+                Button(id = "/start", title = "Menu Inicial")
+            )
+        )
+    }
+
+    // ── CRLV Agendado: Ver status dos pedidos ─────────────────────
+
+    private fun showScheduledCrlvStatus(context: CommandContext, whatsappService: WhatsappService) {
+        val orders = scheduledCrlvOrderRepository.findByUserPhoneOrderByCreatedAtDesc(context.from)
+
+        if (orders.isEmpty()) {
+            whatsappService.sendMessage(
+                context.from,
+                "Voce nao possui pedidos de CRLV-e agendado."
+            )
+            whatsappService.sendButtons(
+                to = context.from,
+                body = "O que deseja fazer?",
+                buttons = listOf(
+                    Button(id = "/consultar crlv_agendado", title = "Solicitar CRLV-e"),
+                    Button(id = "/consultar", title = "Painel de Consultas"),
+                    Button(id = "/start", title = "Menu Inicial")
+                )
+            )
+            return
+        }
+
+        val statusLabel = mapOf(
+            "PENDING" to "Pendente",
+            "COMPLETED" to "Concluido",
+            "CANCELLED" to "Cancelado",
+            "EXPIRED" to "Expirado"
+        )
+
+        val dateFmt = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+            .withZone(ZoneId.of("America/Sao_Paulo"))
+
+        val text = buildString {
+            append("*Seus Pedidos CRLV-e Agendado*\n")
+
+            orders.take(10).forEach { order ->
+                val stateName = QueryTypeRegistry.CRLV_AGENDADO_STATES["crlvag_${order.uf}"] ?: order.uf.uppercase()
+                val label = statusLabel[order.status] ?: order.status
+
+                append("\n---\n")
+                append("Pedido *#${order.pedidoId}*\n")
+                append("Estado: *$stateName*\n")
+                append("Placa: *${order.placa}*\n")
+                append("Status: *$label*\n")
+                append("Solicitado: ${dateFmt.format(order.createdAt)}")
+                if (!order.adminMessage.isNullOrBlank()) {
+                    append("\nObs: ${order.adminMessage}")
+                }
+            }
+        }
+
+        whatsappService.sendMessage(context.from, text)
+
+        whatsappService.sendButtons(
+            to = context.from,
+            body = "O que deseja fazer?",
+            buttons = listOf(
+                Button(id = "/consultar crlv_agendado", title = "Novo Pedido"),
+                Button(id = "/consultar", title = "Painel de Consultas"),
+                Button(id = "/start", title = "Menu Inicial")
+            )
+        )
+    }
+
+    // ── Helper: preço efetivo (fallback para meta-módulo) ─────────
+
+    private fun getEffectivePrice(tipo: String): BigDecimal {
+        if (tipo.startsWith("crlvag_")) {
+            val parentPrice = pricingService.getPrice("crlv_agendado")
+            if (parentPrice > BigDecimal.ZERO) return parentPrice
+        }
+        if (tipo in QueryTypeRegistry.CRLV_STATES) {
+            val parentPrice = pricingService.getPrice("crlv_digital")
+            if (parentPrice > BigDecimal.ZERO) return parentPrice
+        }
+        return pricingService.getPrice(tipo)
+    }
+
+    private fun notifyAdmin(whatsappService: WhatsappService, message: String) {
+        val adminPhone = adminService.getSuperAdminPhone() ?: return
+        try {
+            whatsappService.sendMessage(adminPhone, message)
+        } catch (e: Exception) {
+            log.error("Falha ao notificar admin: {}", e.message)
         }
     }
 
@@ -574,7 +794,11 @@ class ConsultarCommand(
         val info = queryTypeRegistry.getTypeInfo(session.tipo)
         if (info != null) {
             paymentSessionManager.consume(context.from)
-            performQuery(context, whatsappService, session.tipo, info, session.query)
+            if (queryTypeRegistry.isAgendadoType(session.tipo)) {
+                submitScheduledCrlv(context, whatsappService, session.tipo, info, session.query)
+            } else {
+                performQuery(context, whatsappService, session.tipo, info, session.query)
+            }
         }
     }
 
@@ -595,7 +819,11 @@ class ConsultarCommand(
         }
 
         paymentSessionManager.consume(context.from)
-        performQuery(context, whatsappService, session.tipo, info, session.query)
+        if (queryTypeRegistry.isAgendadoType(session.tipo)) {
+            submitScheduledCrlv(context, whatsappService, session.tipo, info, session.query)
+        } else {
+            performQuery(context, whatsappService, session.tipo, info, session.query)
+        }
     }
 
     // ── Cancelar pagamento pendente ────────────────────────────────
@@ -677,6 +905,23 @@ class ConsultarCommand(
                     Button(id = "/start", title = "Menu Inicial")
                 )
             )
+
+            // Notificar admin se for erro de sistema em consulta paga
+            val price = getEffectivePrice(tipo)
+            if (price > BigDecimal.ZERO && !ScheduledCrlvPoller.isUserError(result.error)) {
+                notifyAdmin(
+                    whatsappService,
+                    buildString {
+                        append("*ALERTA: Consulta paga falhou com erro de sistema*\n\n")
+                        append("Tipo: *${info.label}*\n")
+                        append("Dado: $query\n")
+                        append("Valor: *R\$ ${"%.2f".format(price)}*\n")
+                        append("Cliente: ${context.from}\n")
+                        append("Erro: ${result.error ?: "Erro desconhecido"}\n\n")
+                        append("Verifique se o cliente foi cobrado.")
+                    }
+                )
+            }
             return
         }
 

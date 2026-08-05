@@ -31,6 +31,7 @@ class StartCommand : BotCommand {
             body = "O que deseja fazer?",
             buttons = listOf(
                 Button(id = "/consultar", title = "Consultas"),
+                Button(id = "/suporte", title = "Suporte"),
                 Button(id = "/help", title = "Ajuda")
             ),
             footer = "ND Consultas | v1.0"

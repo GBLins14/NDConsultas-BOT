@@ -30,6 +30,20 @@ class QueryTypeRegistry {
             CRLV_STATES.keys + setOf("crv_codigo", "crv_digital_cod")
         }
 
+        val CRLV_AGENDADO_STATES = linkedMapOf(
+            "crlvag_al" to "Alagoas",
+            "crlvag_ce" to "Ceará",
+            "crlvag_df" to "Distrito Federal",
+            "crlvag_es" to "Espírito Santo",
+            "crlvag_pb" to "Paraíba",
+            "crlvag_pe" to "Pernambuco",
+            "crlvag_rj" to "Rio de Janeiro",
+            "crlvag_rn" to "Rio Grande do Norte",
+            "crlvag_sc" to "Santa Catarina"
+        )
+
+        val CRLV_AGENDADO_FULL_INPUT_STATES = setOf("crlvag_pb", "crlvag_rn")
+
         val CRLV_STATES = linkedMapOf(
             "crlv_ac" to "Acre",
             "crlv_al" to "Alagoas",
@@ -179,15 +193,37 @@ class QueryTypeRegistry {
             returnDetails = "Documento PDF do CRV Digital com código de segurança."
         ),
 
+        // ── CRLV Agendado (meta-módulo) ────────────────────────────────
+        "crlv_agendado" to QueryTypeInfo(
+            label = "Solicitar CRLV-e",
+            inputPrompt = "",
+            category = "documentos_agendados",
+            description = "Solicita CRLV-e agendado. O documento é emitido e enviado quando estiver pronto.",
+            returnSummary = "PDF do CRLV-e (entrega posterior)",
+            returnDetails = "Documento CRLV-e em PDF — processamento pode levar algumas horas."
+        ),
+        "status_agendado" to QueryTypeInfo(
+            label = "Ver Status de Pedidos",
+            inputPrompt = "",
+            category = "documentos_agendados",
+            description = "Consulte o status dos seus pedidos de CRLV-e agendado.",
+            returnSummary = "Status dos pedidos",
+            returnDetails = "Lista de pedidos agendados com status atualizado."
+        ),
+
         // ── CRLV por estado (ocultos — acessados via seleção de estado) ──
-        *buildCrlvStateTypes().toList().toTypedArray()
+        *buildCrlvStateTypes().toList().toTypedArray(),
+
+        // ── CRLV agendado por estado (ocultos) ─────────────────────────
+        *buildCrlvAgendadoStateTypes().toList().toTypedArray()
     )
 
     val categories = linkedMapOf(
         "veicular" to CategoryInfo("Consultas Veiculares", "Placa, Chassi, Motor, Renavam, Multas e mais", 7),
         "pessoal" to CategoryInfo("Consultas Pessoais", "Telefone, CPF", 2),
         "leilao" to CategoryInfo("Busca Leilão e Sinistro", "Leilão completo com score", 1),
-        "documentos" to CategoryInfo("Documentos Digitais", "CRLV-e, CRV, Código de Segurança", 3)
+        "documentos" to CategoryInfo("Documentos Imediatos", "CRLV-e, CRV — entrega instantânea", 3),
+        "documentos_agendados" to CategoryInfo("CRLV-e Agendado", "Solicite e receba quando pronto", 2)
     )
 
     fun getTypeLabel(tipo: String): String = types[tipo]?.label ?: tipo
@@ -200,18 +236,34 @@ class QueryTypeRegistry {
     fun isCrlvState(tipo: String): Boolean = tipo in CRLV_STATES
 
     fun isPortalDespachantesType(tipo: String): Boolean = tipo in PORTAL_DESPACHANTES_TYPES
+
+    fun isAgendadoType(tipo: String): Boolean = tipo.startsWith("crlvag_")
+
+    fun isCrlvAgendadoState(tipo: String): Boolean = tipo in CRLV_AGENDADO_STATES
 }
 
 private fun buildCrlvStateTypes(): Map<String, QueryTypeRegistry.QueryTypeInfo> {
     return QueryTypeRegistry.CRLV_STATES.map { (key, stateName) ->
-        val inputPrompt = "Informe a *placa* do veiculo"
         key to QueryTypeRegistry.QueryTypeInfo(
             label = "CRLV $stateName",
-            inputPrompt = inputPrompt,
+            inputPrompt = "Informe a *placa* do veiculo",
             category = "_crlv",
             description = "Emissão do CRLV-e para o estado de $stateName.",
             returnSummary = "PDF do CRLV-e",
             returnDetails = "Documento CRLV-e em PDF."
+        )
+    }.toMap()
+}
+
+private fun buildCrlvAgendadoStateTypes(): Map<String, QueryTypeRegistry.QueryTypeInfo> {
+    return QueryTypeRegistry.CRLV_AGENDADO_STATES.map { (key, stateName) ->
+        key to QueryTypeRegistry.QueryTypeInfo(
+            label = "CRLV Agendado $stateName",
+            inputPrompt = "Informe a *placa* do veiculo",
+            category = "_crlvag",
+            description = "Solicitacao de CRLV-e agendado para $stateName.",
+            returnSummary = "PDF do CRLV-e (entrega posterior)",
+            returnDetails = "Documento CRLV-e em PDF — processamento pode levar algumas horas."
         )
     }.toMap()
 }

@@ -25,6 +25,7 @@ class AdminService(
     private val adminNumbers = ConcurrentHashMap.newKeySet<String>()
     private val botBlocked = AtomicBoolean(false)
     private val pendingActions = ConcurrentHashMap<String, String>()
+    @Volatile private var supportPhone: String? = null
 
     // ── Verificação de admin ────────────────────────────────────────
 
@@ -35,6 +36,30 @@ class AdminService(
         isSuperAdmin(phoneNumber) || adminNumbers.contains(phoneNumber)
 
     fun isAdminConfigured(): Boolean = superAdminPhone.isNotBlank()
+
+    fun getSuperAdminPhone(): String? = superAdminPhone.ifBlank { null }
+
+    // ── Suporte ─────────────────────────────────────────────────────
+
+    fun setSupportPhone(phone: String) {
+        val normalized = normalizeNumber(phone)
+        supportPhone = normalized
+        log.info("Telefone de suporte definido: {}", normalized)
+        persistence.saveSupportPhone(normalized)
+    }
+
+    fun removeSupportPhone() {
+        supportPhone = null
+        log.info("Telefone de suporte removido")
+        persistence.deleteSupportPhone()
+    }
+
+    fun getSupportPhone(): String? = supportPhone
+
+    /** Chamado apenas pelo ConfigPersistenceService no startup. */
+    fun loadSupportPhone(phone: String) {
+        supportPhone = phone
+    }
 
     // ── Gerenciar admins ────────────────────────────────────────────
 
