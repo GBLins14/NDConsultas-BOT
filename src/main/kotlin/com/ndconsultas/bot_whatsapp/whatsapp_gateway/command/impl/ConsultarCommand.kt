@@ -68,37 +68,26 @@ class ConsultarCommand(
         }
     }
 
-    // ── Step 1: Listar módulos agrupados por categoria ───────────────
+    // ── Step 1: Listar categorias ──────────────────────────────────
 
     private fun showCategories(context: CommandContext, whatsappService: WhatsappService) {
         val isAdmin = adminService.isAdmin(context.from)
 
-        val sections = queryTypeRegistry.categories.mapNotNull { (catKey, catInfo) ->
+        val rows = queryTypeRegistry.categories.mapNotNull { (catKey, catInfo) ->
             val allTypes = queryTypeRegistry.getTypesForCategory(catKey)
             val types = if (isAdmin) allTypes
                 else allTypes.filter { pricingService.isModuleEnabled(it.key) }
 
             if (types.isEmpty()) return@mapNotNull null
 
-            ListSection(
+            ListRow(
+                id = "/consultar cat $catKey",
                 title = catInfo.label,
-                rows = types.map { (tipo, info) ->
-                    val price = pricingService.getPrice(tipo)
-                    val priceText = when {
-                        isAdmin -> "Grátis (Admin)"
-                        price > BigDecimal.ZERO -> "R\$ ${"%.2f".format(price)}"
-                        else -> "Grátis"
-                    }
-                    ListRow(
-                        id = "/consultar $tipo",
-                        title = info.label,
-                        description = "Escolha para saber mais."
-                    )
-                }
+                description = catInfo.description
             )
         }
 
-        if (sections.isEmpty()) {
+        if (rows.isEmpty()) {
             whatsappService.sendMessage(
                 context.from,
                 "Nenhum módulo de consulta disponível no momento.\nTente novamente mais tarde."
@@ -111,18 +100,54 @@ class ConsultarCommand(
             header = "Painel de Consultas",
             body = buildString {
                 append("Bem-vindo ao *Painel de Consultas*\n\n")
-                append("Selecione o tipo de consulta que deseja realizar.")
+                append("Selecione a categoria de consulta que deseja realizar.")
             },
-            buttonLabel = "Ver Consultas",
+            buttonLabel = "Ver Categorias",
             footer = "ND Consultas",
-            sections = sections
+            sections = listOf(ListSection(title = "Categorias", rows = rows))
         )
     }
 
-    // ── Step 2 (legado): Redireciona para listagem direta ──────────
+    // ── Step 2: Listar módulos de uma categoria ────────────────────
 
     private fun showCategoryTypes(context: CommandContext, whatsappService: WhatsappService) {
-        showCategories(context, whatsappService)
+        val catKey = context.args[1]
+        val catInfo = queryTypeRegistry.categories[catKey]
+
+        if (catInfo == null) {
+            showCategories(context, whatsappService)
+            return
+        }
+
+        val isAdmin = adminService.isAdmin(context.from)
+        val allTypes = queryTypeRegistry.getTypesForCategory(catKey)
+        val types = if (isAdmin) allTypes
+            else allTypes.filter { pricingService.isModuleEnabled(it.key) }
+
+        if (types.isEmpty()) {
+            whatsappService.sendMessage(
+                context.from,
+                "Nenhum módulo disponível nesta categoria no momento."
+            )
+            return
+        }
+
+        val rows = types.map { (tipo, info) ->
+            ListRow(
+                id = "/consultar $tipo",
+                title = info.label,
+                description = "Escolha para saber mais."
+            )
+        }
+
+        whatsappService.sendList(
+            to = context.from,
+            header = catInfo.label,
+            body = "Selecione o tipo de consulta:",
+            buttonLabel = "Ver Consultas",
+            footer = "ND Consultas",
+            sections = listOf(ListSection(title = catInfo.label, rows = rows))
+        )
     }
 
     // ── CRLV: Seleção de estado ────────────────────────────────────
