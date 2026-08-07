@@ -105,7 +105,8 @@ class PdfReportService(
     data class AlertInfo(
         val label: String,
         val isAlert: Boolean,
-        val detail: String
+        val detail: String,
+        val isIndeterminate: Boolean = false
     )
 
     private val moduleAlerts: Map<String, List<AlertDef>> = mapOf(
@@ -229,6 +230,9 @@ class PdfReportService(
                 val valueLower = value.lowercase().trim()
                 val isSafe = SAFE_VALUES.any { valueLower == it || valueLower.contains(it) }
                 if (!isSafe && valueLower.isNotBlank()) {
+                    if (isNullLikeValue(valueLower)) {
+                        return AlertInfo(def.label, false, "Indefinido", isIndeterminate = true)
+                    }
                     return AlertInfo(def.label, true, value)
                 }
             }
@@ -244,11 +248,28 @@ class PdfReportService(
                 val valueLower = value.lowercase().trim()
                 val isEmpty = valueLower.isBlank() || SAFE_VALUES.any { valueLower == it }
                 if (!isEmpty) {
+                    // Valores null-like (ex: {ano=null, data=null}) → indefinido (amarelo)
+                    if (isNullLikeValue(valueLower)) {
+                        return AlertInfo(def.label, false, "Indefinido", isIndeterminate = true)
+                    }
                     return AlertInfo(def.label, true, value)
                 }
             }
         }
         return AlertInfo(def.label, false, def.positiveText)
+    }
+
+    private fun isNullLikeValue(value: String): Boolean {
+        if (value == "null") return true
+        // Detecta padrões como {ano=null, data=null} ou {key=null}
+        if (value.startsWith("{") && value.endsWith("}")) {
+            val inner = value.removeSurrounding("{", "}").trim()
+            return inner.split(",").all { part ->
+                val v = part.substringAfter("=", "").trim()
+                v == "null" || v.isBlank()
+            }
+        }
+        return false
     }
 
     // Alerta se existe_ocorrencia == "1"
@@ -447,6 +468,12 @@ class PdfReportService(
                     borderColor = RED_BORDER
                     textColor = RED
                     icon = "\u2716"  // ✖
+                }
+                alert.isIndeterminate -> {
+                    bgColor = YELLOW_BG
+                    borderColor = YELLOW_BORDER
+                    textColor = YELLOW
+                    icon = "\u26A0"  // ⚠
                 }
                 else -> {
                     bgColor = GREEN_BG
