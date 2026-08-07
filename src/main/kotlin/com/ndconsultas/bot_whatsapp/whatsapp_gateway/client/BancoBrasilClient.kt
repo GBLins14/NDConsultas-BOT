@@ -43,7 +43,7 @@ class BancoBrasilClient(
         )
 
         val response = oauthClient.post()
-            .uri(properties.oauthUrl)
+            .uri("${properties.oauthUrl}?gw-dev-app-key=${properties.appKey}")
             .header("Authorization", "Basic $credentials")
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body("grant_type=client_credentials&scope=debitos-veiculares.requisicao debitos-veiculares.info")
