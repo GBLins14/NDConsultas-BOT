@@ -82,7 +82,7 @@ class QueryTypeRegistry {
         // ── Consultas Veiculares ────────────────────────────────────
         "placa_serpro" to QueryTypeInfo(
             label = "Placa SERPRO",
-            inputPrompt = "Informe a *placa* do veiculo",
+            inputPrompt = "Informe a *placa* do veiculo\n_Formato: ABC1234 ou ABC1A23_",
             category = "veicular",
             description = "Consulta por placa direto no SERPRO (governo federal).",
             returnSummary = "Veiculo, Proprietario, Restricoes, Venda",
@@ -90,7 +90,7 @@ class QueryTypeRegistry {
         ),
         "bin_chassi" to QueryTypeInfo(
             label = "BIN Chassi",
-            inputPrompt = "Informe o *numero do chassi*",
+            inputPrompt = "Informe o *numero do chassi*\n_Formato: 9BWZZZ377VT004251_",
             category = "veicular",
             description = "Consulta BIN por numero de chassi.",
             returnSummary = "Veiculo, Proprietario, Situacao",
@@ -98,7 +98,7 @@ class QueryTypeRegistry {
         ),
         "bin_motor" to QueryTypeInfo(
             label = "BIN Motor",
-            inputPrompt = "Informe o *numero do motor*",
+            inputPrompt = "Informe o *numero do motor*\n_Formato: ABC1234567_",
             category = "veicular",
             description = "Consulta BIN por numero do motor.",
             returnSummary = "Veiculo, Proprietario, Situacao",
@@ -106,7 +106,7 @@ class QueryTypeRegistry {
         ),
         "bin_renavam" to QueryTypeInfo(
             label = "BIN Renavam",
-            inputPrompt = "Informe o *numero do RENAVAM*",
+            inputPrompt = "Informe o *numero do RENAVAM*\n_Formato: 00123456789 (11 digitos)_",
             category = "veicular",
             description = "Consulta BIN por RENAVAM.",
             returnSummary = "Veiculo, Proprietario, Situacao",
@@ -114,7 +114,7 @@ class QueryTypeRegistry {
         ),
         "multas_senatran" to QueryTypeInfo(
             label = "Multas SENATRAN",
-            inputPrompt = "Informe a *placa* do veiculo",
+            inputPrompt = "Informe a *placa* do veiculo\n_Formato: ABC1234 ou ABC1A23_",
             category = "veicular",
             description = "Lista todas as multas registradas no SENATRAN.",
             returnSummary = "Multas, Valores, Pontuacao",
@@ -122,7 +122,7 @@ class QueryTypeRegistry {
         ),
         "ocorrencias_senatran" to QueryTypeInfo(
             label = "Ocorrencias SENATRAN",
-            inputPrompt = "Informe a *placa* do veiculo",
+            inputPrompt = "Informe a *placa* do veiculo\n_Formato: ABC1234 ou ABC1A23_",
             category = "veicular",
             description = "Consulta ocorrencias registradas no SENATRAN.",
             returnSummary = "Furto, Roubo, Sinistro, B.O.",
@@ -130,7 +130,7 @@ class QueryTypeRegistry {
         ),
         "renajud_senatran" to QueryTypeInfo(
             label = "Renajud SENATRAN",
-            inputPrompt = "Informe a *placa* do veiculo",
+            inputPrompt = "Informe a *placa* do veiculo\n_Formato: ABC1234 ou ABC1A23_",
             category = "veicular",
             description = "Consulta restricoes judiciais (RENAJUD).",
             returnSummary = "Bloqueio, Penhora, Impedimento",
@@ -140,7 +140,7 @@ class QueryTypeRegistry {
         // ── Consultas Pessoais ──────────────────────────────────────
         "telefone_full" to QueryTypeInfo(
             label = "Telefone Full",
-            inputPrompt = "Informe o *numero de telefone* (com DDD)",
+            inputPrompt = "Informe o *numero de telefone* (com DDD)\n_Formato: 81999998888_",
             category = "pessoal",
             description = "Consulta completa por numero de telefone.",
             returnSummary = "Nome, CPF, Endereco, Operadora",
@@ -148,7 +148,7 @@ class QueryTypeRegistry {
         ),
         "cpf_full" to QueryTypeInfo(
             label = "CPF Full",
-            inputPrompt = "Informe o *CPF*",
+            inputPrompt = "Informe o *CPF*\n_Formato: 12345678901 (11 digitos)_",
             category = "pessoal",
             description = "Consulta completa por CPF.",
             returnSummary = "Nome, Endereco, Telefone, Renda",
@@ -158,7 +158,7 @@ class QueryTypeRegistry {
         // ── Busca Leilao e Sinistro ─────────────────────────────────
         "leilao_completo_score" to QueryTypeInfo(
             label = "Leilao Completo + Score",
-            inputPrompt = "Informe a *placa* do veiculo",
+            inputPrompt = "Informe a *placa* do veiculo\n_Formato: ABC1234 ou ABC1A23_",
             category = "leilao",
             description = "Consulta completa de leilao e sinistro com score.",
             returnSummary = "Score, Leilao, Sinistro, Veiculo",
@@ -175,19 +175,19 @@ class QueryTypeRegistry {
             returnDetails = "Documento CRLV-e em PDF do estado selecionado."
         ),
 
-        // ── Documentos Digitais — CRV ───────────────────────────────
+        // ── Código de Segurança CRV ─────────────────────────────────
         "crv_codigo" to QueryTypeInfo(
             label = "Código Segurança CRV",
-            inputPrompt = "Informe a *placa* do veiculo",
-            category = "documentos",
+            inputPrompt = "Informe a *placa* do veiculo\n_Formato: ABC1234 ou ABC1A23_",
+            category = "codigo_seguranca",
             description = "Consulta o código de segurança do CRV.",
             returnSummary = "PDF com Código CRV",
             returnDetails = "Documento PDF com o código de segurança do CRV."
         ),
         "crv_digital_cod" to QueryTypeInfo(
             label = "CRV Digital + Código",
-            inputPrompt = "Informe a *placa* do veiculo",
-            category = "documentos",
+            inputPrompt = "Informe a *placa* do veiculo\n_Formato: ABC1234 ou ABC1A23_",
+            category = "codigo_seguranca",
             description = "CRV Digital completo com código de segurança (JSON + PDF via API).",
             returnSummary = "PDF CRV Digital + Código",
             returnDetails = "Documento PDF do CRV Digital com código de segurança."
@@ -222,8 +222,9 @@ class QueryTypeRegistry {
         "veicular" to CategoryInfo("Consultas Veiculares", "Placa, Chassi, Motor, Renavam, Multas e mais", 7),
         "pessoal" to CategoryInfo("Consultas Pessoais", "Telefone, CPF", 2),
         "leilao" to CategoryInfo("Busca Leilão e Sinistro", "Leilão completo com score", 1),
-        "documentos" to CategoryInfo("CRLV-e Imediato", "CRLV-e, CRV — entrega instantânea", 3),
-        "documentos_agendados" to CategoryInfo("CRLV-e Agendado", "Solicite e receba quando pronto", 2)
+        "documentos" to CategoryInfo("CRLV-e Imediato", "CRLV-e — entrega instantânea", 1),
+        "codigo_seguranca" to CategoryInfo("Código de Segurança CRV", "Código de segurança e CRV Digital", 2),
+        "documentos_agendados" to CategoryInfo("CRLV-e Agendado", "Solicite seu CRLV-e e receba quando pronto", 2)
     )
 
     fun getTypeLabel(tipo: String): String = types[tipo]?.label ?: tipo
@@ -246,7 +247,7 @@ private fun buildCrlvStateTypes(): Map<String, QueryTypeRegistry.QueryTypeInfo> 
     return QueryTypeRegistry.CRLV_STATES.map { (key, stateName) ->
         key to QueryTypeRegistry.QueryTypeInfo(
             label = "CRLV $stateName",
-            inputPrompt = "Informe a *placa* do veiculo",
+            inputPrompt = "Informe a *placa* do veiculo\n_Formato: ABC1234 ou ABC1A23_",
             category = "_crlv",
             description = "Emissão do CRLV-e para o estado de $stateName.",
             returnSummary = "PDF do CRLV-e",
@@ -259,7 +260,7 @@ private fun buildCrlvAgendadoStateTypes(): Map<String, QueryTypeRegistry.QueryTy
     return QueryTypeRegistry.CRLV_AGENDADO_STATES.map { (key, stateName) ->
         key to QueryTypeRegistry.QueryTypeInfo(
             label = "CRLV Agendado $stateName",
-            inputPrompt = "Informe a *placa* do veiculo",
+            inputPrompt = "Informe a *placa* do veiculo\n_Formato: ABC1234 ou ABC1A23_",
             category = "_crlvag",
             description = "Solicitacao de CRLV-e agendado para $stateName.",
             returnSummary = "PDF do CRLV-e (entrega posterior)",

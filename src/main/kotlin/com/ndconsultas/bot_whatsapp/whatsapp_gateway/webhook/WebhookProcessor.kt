@@ -84,7 +84,11 @@ class WebhookProcessor(
             if (incoming.type == MessageType.TEXT && incoming.text != null) {
                 val textCtx = ctx.copy(rawMessage = incoming.text)
 
-                // 1. Tentar processar como comando
+                // 1. Tentar processar como comando — se for comando, cancelar operação pendente
+                if (incoming.text.startsWith("/")) {
+                    sessionManager.removePending(message.from)
+                    paymentSessionManager.cancel(message.from)
+                }
                 if (commandProcessor.process(textCtx)) return@forEach
 
                 // 2. Admin: verificar acao pendente (ban/unban input)
@@ -135,6 +139,18 @@ class WebhookProcessor(
             if (incoming.type == MessageType.INTERACTIVE) {
                 val replyId = incoming.buttonReplyId ?: incoming.listReplyId
                 if (replyId != null && replyId.startsWith("/")) {
+                    // Cancelar operação pendente ao escolher outra opção
+                    val isCancelOrSameQuery = replyId.startsWith("/consultar cancelar")
+                    if (!isCancelOrSameQuery) {
+                        val pending = sessionManager.getPending(message.from)
+                        if (pending != null) {
+                            // Se o usuário escolheu outro módulo/operação, cancelar a pendente
+                            val replyTipo = replyId.removePrefix("/consultar ").split(" ").firstOrNull()
+                            if (replyTipo != pending.tipo) {
+                                sessionManager.removePending(message.from)
+                            }
+                        }
+                    }
                     if (commandProcessor.process(ctx.copy(rawMessage = replyId))) return@forEach
                 }
             }

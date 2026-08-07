@@ -16,6 +16,20 @@ class SuporteCommand(
     override val description = "Falar com o suporte"
     override val aliases = listOf("/support", "/ajuda_suporte")
 
+    /**
+     * Garante que o número BR tenha o 9 após o DDD para links wa.me.
+     * 5581XXXXXXXX (12 dígitos) → 55819XXXXXXXX (13 dígitos)
+     */
+    private fun ensureBrMobile(phone: String): String {
+        val digits = phone.replace(Regex("[^0-9]"), "")
+        if (digits.startsWith("55") && digits.length == 12) {
+            val ddd = digits.substring(2, 4)
+            val rest = digits.substring(4)
+            return "55${ddd}9${rest}"
+        }
+        return digits
+    }
+
     override fun execute(context: CommandContext, whatsappService: WhatsappService) {
         val supportPhone = adminService.getSupportPhone()
 
@@ -35,12 +49,14 @@ class SuporteCommand(
             return
         }
 
+        val formattedPhone = ensureBrMobile(supportPhone)
+
         whatsappService.sendMessage(
             context.from,
             buildString {
                 append("*Suporte ND Consultas*\n\n")
                 append("Clique no link abaixo para falar diretamente com nosso suporte:\n\n")
-                append("https://wa.me/$supportPhone")
+                append("https://wa.me/$formattedPhone")
             }
         )
 

@@ -62,6 +62,7 @@ class ConsultarCommand(
         when {
             context.args.isEmpty() -> showCategories(context, whatsappService)
             context.args[0] == "cat" && context.args.size >= 2 -> showCategoryTypes(context, whatsappService)
+            context.args[0] == "cancelar_operacao" -> cancelOperation(context, whatsappService)
             context.args[0] == "cancelar_pgto" -> cancelPayment(context, whatsappService)
             context.args[0] == "pago" -> executeFromPayment(context, whatsappService)
             context.args[0] == "pgto_pix" -> handlePixPayment(context, whatsappService)
@@ -258,6 +259,14 @@ class ConsultarCommand(
             context.from,
             "*${info.label}*$priceText\n\n${info.description}\n\n*Retorna:* ${info.returnDetails}\n\n${info.inputPrompt}:"
         )
+
+        whatsappService.sendButtons(
+            to = context.from,
+            body = "Ou cancele a operação:",
+            buttons = listOf(
+                Button(id = "/consultar cancelar_operacao", title = "Cancelar")
+            )
+        )
     }
 
     // ── Step 4: Executar consulta ───────────────────────────────────
@@ -345,27 +354,27 @@ class ConsultarCommand(
             "placa" -> {
                 val placa = input.trim().uppercase()
                 if (placa.isBlank()) {
-                    whatsappService.sendMessage(context.from, "Placa inválida. Informe a *placa* do veículo:")
+                    whatsappService.sendMessage(context.from, "Placa inválida. Informe a *placa* do veículo:\n_Formato: ABC1234 ou ABC1A23_")
                     return
                 }
                 fields["placa"] = placa
                 sessionManager.updatePending(context.from, fields, "renavam")
-                whatsappService.sendMessage(context.from, "Agora informe o *RENAVAM*:")
+                whatsappService.sendMessage(context.from, "Agora informe o *RENAVAM*:\n_Formato: 00123456789 (11 dígitos)_")
             }
             "renavam" -> {
                 val renavam = input.trim().replace(Regex("[^0-9]"), "")
                 if (renavam.isBlank()) {
-                    whatsappService.sendMessage(context.from, "RENAVAM inválido. Informe o *RENAVAM* (somente números):")
+                    whatsappService.sendMessage(context.from, "RENAVAM inválido. Informe o *RENAVAM* (somente números):\n_Formato: 00123456789 (11 dígitos)_")
                     return
                 }
                 fields["renavam"] = renavam
                 sessionManager.updatePending(context.from, fields, "cpf")
-                whatsappService.sendMessage(context.from, "Agora informe o *CPF* do proprietário:")
+                whatsappService.sendMessage(context.from, "Agora informe o *CPF* do proprietário:\n_Formato: 12345678901 (11 dígitos)_")
             }
             "cpf" -> {
                 val cpf = input.trim().replace(Regex("[^0-9]"), "")
                 if (cpf.length != 11) {
-                    whatsappService.sendMessage(context.from, "CPF inválido. Informe o *CPF* (11 dígitos):")
+                    whatsappService.sendMessage(context.from, "CPF inválido. Informe o *CPF* (11 dígitos):\n_Formato: 12345678901_")
                     return
                 }
                 fields["cpf"] = cpf
@@ -824,6 +833,21 @@ class ConsultarCommand(
         } else {
             performQuery(context, whatsappService, session.tipo, info, session.query)
         }
+    }
+
+    // ── Cancelar operação pendente (coleta de dados) ────────────────
+
+    private fun cancelOperation(context: CommandContext, whatsappService: WhatsappService) {
+        sessionManager.removePending(context.from)
+        whatsappService.sendMessage(context.from, "Operação cancelada.")
+        whatsappService.sendButtons(
+            to = context.from,
+            body = "O que deseja fazer?",
+            buttons = listOf(
+                Button(id = "/consultar", title = "Nova Consulta"),
+                Button(id = "/start", title = "Menu Inicial")
+            )
+        )
     }
 
     // ── Cancelar pagamento pendente ────────────────────────────────

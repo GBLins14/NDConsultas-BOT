@@ -1201,9 +1201,14 @@ class AdminCommand(
         }
 
         adminService.setSupportPhone(normalized)
+        val linkPhone = if (normalized.startsWith("55") && normalized.length == 12) {
+            val ddd = normalized.substring(2, 4)
+            val rest = normalized.substring(4)
+            "55${ddd}9${rest}"
+        } else normalized
         whatsappService.sendMessage(
             context.from,
-            "*Telefone de suporte definido!*\n\nNumero: $normalized\nLink: https://wa.me/$normalized"
+            "*Telefone de suporte definido!*\n\nNumero: $normalized\nLink: https://wa.me/$linkPhone"
         )
         sendBackButton(context, whatsappService, "controle")
     }
