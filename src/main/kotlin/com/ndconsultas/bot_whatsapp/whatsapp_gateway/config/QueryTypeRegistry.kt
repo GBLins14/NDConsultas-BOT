@@ -155,6 +155,16 @@ class QueryTypeRegistry {
             returnDetails = "Nome Completo, CPF, Data de Nascimento, Sexo, Nome da Mae, Situacao Cadastral, Endereco, Bairro, Cidade, UF, CEP, Telefones, E-mail, Renda Presumida, Escolaridade, Obito."
         ),
 
+        // ── Débitos Veiculares ──────────────────────────────────────
+        "debito_veicular" to QueryTypeInfo(
+            label = "Débitos Veiculares (RN)",
+            inputPrompt = "Informe o *RENAVAM* do veículo\n_Formato: 00123456789 (até 11 dígitos)_",
+            category = "debitos",
+            description = "Consulta débitos veiculares do RN (IPVA, multas, licenciamento, etc.) via Banco do Brasil.",
+            returnSummary = "IPVA, Multas, Licenciamento, DPVAT",
+            returnDetails = "Lista de débitos pendentes do veículo no RN incluindo IPVA, multas de trânsito, licenciamento, DPVAT e transferência, com valores e possibilidade de pagamento via PIX."
+        ),
+
         // ── Busca Leilao e Sinistro ─────────────────────────────────
         "leilao_completo_score" to QueryTypeInfo(
             label = "Leilao Completo + Score",
@@ -220,6 +230,7 @@ class QueryTypeRegistry {
 
     val categories = linkedMapOf(
         "veicular" to CategoryInfo("Consultas Veiculares", "Placa, Chassi, Motor, Renavam, Multas e mais", 7),
+        "debitos" to CategoryInfo("Débitos Veiculares (RN)", "Consulte e pague IPVA, multas, licenciamento", 1),
         "pessoal" to CategoryInfo("Consultas Pessoais", "Telefone, CPF", 2),
         "leilao" to CategoryInfo("Busca Leilão e Sinistro", "Leilão completo com score", 1),
         "documentos" to CategoryInfo("CRLV-e Imediato", "CRLV-e — entrega instantânea", 1),

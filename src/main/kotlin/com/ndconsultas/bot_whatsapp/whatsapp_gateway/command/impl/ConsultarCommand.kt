@@ -9,11 +9,14 @@ import com.ndconsultas.bot_whatsapp.whatsapp_gateway.model.ListSection
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.AdminService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ConsultationSessionManager
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ConsultationStats
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.DebitoVeicularService
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.DebitoVeicularSessionManager
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PaymentService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PaymentSessionManager
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PaymentStats
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PdfReportService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.PricingService
+import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.QrCodeService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.ScheduledCrlvPoller
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.VehicleConsultationService
 import com.ndconsultas.bot_whatsapp.whatsapp_gateway.service.WhatsappService
@@ -38,7 +41,10 @@ class ConsultarCommand(
     private val paymentStats: PaymentStats,
     private val paymentService: PaymentService,
     private val queryTypeRegistry: QueryTypeRegistry,
-    private val scheduledCrlvOrderRepository: ScheduledCrlvOrderRepository
+    private val scheduledCrlvOrderRepository: ScheduledCrlvOrderRepository,
+    private val debitoVeicularService: DebitoVeicularService,
+    private val debitoVeicularSessionManager: DebitoVeicularSessionManager,
+    private val qrCodeService: QrCodeService
 ) : BotCommand {
 
     override val name = "/consultar"
@@ -72,6 +78,8 @@ class ConsultarCommand(
             context.args[0] == "crlv_regiao" && context.args.size >= 2 -> showCrlvRegionStates(context, whatsappService)
             context.args[0] == "crlv_agendado" && context.args.size == 1 -> showCrlvAgendadoStates(context, whatsappService)
             context.args[0] == "status_agendado" -> showScheduledCrlvStatus(context, whatsappService)
+            context.args[0] == "debitos_listar" -> showDebitosParaPagamento(context, whatsappService)
+            context.args[0] == "debito_pagar" && context.args.size >= 2 -> pagarDebitoItem(context, whatsappService)
             context.args.size == 1 -> promptForData(context, whatsappService)
             else -> executeQuery(context, whatsappService)
         }
@@ -251,9 +259,9 @@ class ConsultarCommand(
             else -> ""
         }
 
-        val needsMultiField = tipo in QueryTypeRegistry.CRLV_FULL_INPUT_STATES ||
+        val needsCrlvMultiField = tipo in QueryTypeRegistry.CRLV_FULL_INPUT_STATES ||
             tipo in QueryTypeRegistry.CRLV_AGENDADO_FULL_INPUT_STATES
-        sessionManager.setPending(context.from, tipo, info.label, nextField = if (needsMultiField) "placa" else null)
+        sessionManager.setPending(context.from, tipo, info.label, nextField = if (needsCrlvMultiField) "placa" else null)
 
         whatsappService.sendMessage(
             context.from,
@@ -331,7 +339,9 @@ class ConsultarCommand(
             }
         }
 
-        if (queryTypeRegistry.isAgendadoType(tipo)) {
+        if (tipo == "debito_veicular") {
+            performDebitoVeicularQuery(context, whatsappService, info, query)
+        } else if (queryTypeRegistry.isAgendadoType(tipo)) {
             submitScheduledCrlv(context, whatsappService, tipo, info, query)
         } else {
             performQuery(context, whatsappService, tipo, info, query)
@@ -575,6 +585,285 @@ class ConsultarCommand(
         )
     }
 
+    // ── Débitos Veiculares: executar consulta BB ──────────────────
+
+    private fun performDebitoVeicularQuery(
+        context: CommandContext,
+        whatsappService: WhatsappService,
+        info: QueryTypeRegistry.QueryTypeInfo,
+        query: String
+    ) {
+        whatsappService.sendMessage(
+            context.from,
+            "Consultando *débitos veiculares (RN)*...\nAguarde um momento \u23F3"
+        )
+
+        val renavam = query.trim().split("\\s+".toRegex())[0]
+        val uf = "RN"
+
+        val renavamLong = renavam.toLongOrNull()
+        if (renavamLong == null) {
+            whatsappService.sendMessage(context.from, "*Erro:* RENAVAM inválido.")
+            return
+        }
+
+        val result = debitoVeicularService.consultarDebitos(renavam = renavamLong, uf = uf)
+
+        if (!result.success) {
+            whatsappService.sendMessage(
+                context.from,
+                "*Erro na consulta de débitos*\n\n${result.error ?: "Erro desconhecido."}"
+            )
+            whatsappService.sendButtons(
+                to = context.from,
+                body = "O que deseja fazer?",
+                buttons = listOf(
+                    Button(id = "/consultar debito_veicular", title = "Tentar Novamente"),
+                    Button(id = "/consultar", title = "Outra Consulta"),
+                    Button(id = "/start", title = "Menu Inicial")
+                )
+            )
+
+            // Notificar admin se for erro de sistema em consulta paga
+            val price = getEffectivePrice("debito_veicular")
+            if (price > BigDecimal.ZERO) {
+                notifyAdmin(
+                    whatsappService,
+                    buildString {
+                        append("*ALERTA: Consulta de débitos veiculares falhou*\n\n")
+                        append("RENAVAM: *$renavam*\n")
+                        append("UF: *$uf*\n")
+                        append("Cliente: ${context.from}\n")
+                        append("Erro: ${result.error ?: "Erro desconhecido"}\n\n")
+                        append("O cliente pode ter sido cobrado. Verifique.")
+                    }
+                )
+            }
+            return
+        }
+
+        val debitos = result.debitos!!
+
+        // Salvar sessão para pagamento posterior
+        debitoVeicularSessionManager.save(
+            context.from,
+            DebitoVeicularSessionManager.DebitoSession(
+                codigoSolicitacao = debitos.codigoSolicitacao ?: "",
+                renavam = renavam,
+                uf = uf,
+                placa = debitos.numeroPlaca,
+                nomeProprietario = debitos.nomeProprietario,
+                timestampLimitePagamento = debitos.timestampLimitePagamento,
+                servicos = debitos.listaServicos?.mapIndexed { idx, s ->
+                    DebitoVeicularSessionManager.ServicoDebitoInfo(
+                        index = idx,
+                        codigoServico = s.codigoServico,
+                        nomeServico = s.nomeServico ?: "Serviço",
+                        numeroIdentificadorItem = s.numeroIdentificadorItem,
+                        valorItem = s.valorItem ?: 0.0,
+                        codigoTextoItem = s.codigoTextoItem ?: "",
+                        numeroUnicoItemBanco = s.numeroUnicoItemBanco,
+                        codigoEstado = s.codigoEstado
+                    )
+                } ?: emptyList()
+            )
+        )
+
+        // Montar texto com resultados
+        val text = buildString {
+            append("*Débitos Veiculares*\n\n")
+            if (!debitos.nomeProprietario.isNullOrBlank()) append("Proprietário: *${debitos.nomeProprietario}*\n")
+            if (!debitos.numeroPlaca.isNullOrBlank()) append("Placa: *${debitos.numeroPlaca}*\n")
+            append("RENAVAM: *${debitos.numeroRenavam ?: renavam}*\n")
+            append("UF: *${debitos.codigoUf ?: uf}*\n")
+            if (!debitos.nomeMunicipio.isNullOrBlank()) append("Município: *${debitos.nomeMunicipio}*\n")
+            append("\n")
+
+            val servicos = debitos.listaServicos
+            if (servicos.isNullOrEmpty()) {
+                append("_Nenhum débito pendente encontrado._")
+            } else {
+                append("*Débitos encontrados:*\n\n")
+                var total = 0.0
+                servicos.forEachIndexed { idx, s ->
+                    val valor = s.valorItem ?: 0.0
+                    total += valor
+                    val desc = s.codigoTextoItem ?: s.nomeServico ?: "Débito"
+                    append("${idx + 1}. $desc — *R\$ ${"%.2f".format(valor)}*")
+                    if (s.codigoEstado != null) append(" (${s.codigoEstado})")
+                    append("\n")
+                }
+                append("\n*Total: R\$ ${"%.2f".format(total)}*")
+            }
+        }
+
+        whatsappService.sendMessage(context.from, text)
+
+        val servicos = debitos.listaServicos
+        if (!servicos.isNullOrEmpty()) {
+            whatsappService.sendButtons(
+                to = context.from,
+                body = "Deseja pagar algum débito via PIX?",
+                buttons = listOf(
+                    Button(id = "/consultar debitos_listar", title = "Pagar Débitos"),
+                    Button(id = "/consultar", title = "Nova Consulta"),
+                    Button(id = "/start", title = "Menu Inicial")
+                )
+            )
+        } else {
+            whatsappService.sendButtons(
+                to = context.from,
+                body = "O que deseja fazer?",
+                buttons = listOf(
+                    Button(id = "/consultar", title = "Nova Consulta"),
+                    Button(id = "/start", title = "Menu Inicial")
+                )
+            )
+        }
+    }
+
+    // ── Débitos Veiculares: listar débitos para pagamento ─────────
+
+    private fun showDebitosParaPagamento(context: CommandContext, whatsappService: WhatsappService) {
+        val session = debitoVeicularSessionManager.get(context.from)
+        if (session == null || session.servicos.isEmpty()) {
+            whatsappService.sendMessage(
+                context.from,
+                "Nenhum resultado de débitos encontrado.\nRealize uma nova consulta de débitos veiculares."
+            )
+            whatsappService.sendButtons(
+                to = context.from,
+                body = "O que deseja fazer?",
+                buttons = listOf(
+                    Button(id = "/consultar debito_veicular", title = "Consultar Débitos"),
+                    Button(id = "/consultar", title = "Painel de Consultas"),
+                    Button(id = "/start", title = "Menu Inicial")
+                )
+            )
+            return
+        }
+
+        // Agrupar por nomeServico para organizar em seções
+        val groups = session.servicos.groupBy { it.nomeServico }
+
+        val sections = groups.map { (serviceName, items) ->
+            val rows = items.take(10).map { s ->
+                val title = s.codigoTextoItem.ifBlank { s.nomeServico }
+                ListRow(
+                    id = "/consultar debito_pagar ${s.index}",
+                    title = title.take(24),
+                    description = "R\$ ${"%.2f".format(s.valorItem)}"
+                )
+            }
+            ListSection(title = serviceName.take(24), rows = rows)
+        }.take(10)
+
+        whatsappService.sendList(
+            to = context.from,
+            header = "Pagar Débitos",
+            body = "Selecione o débito que deseja pagar via *PIX*:\n\n_O pagamento é processado diretamente pelo Banco do Brasil._",
+            buttonLabel = "Ver Débitos",
+            footer = "ND Consultas",
+            sections = sections
+        )
+    }
+
+    // ── Débitos Veiculares: gerar PIX para débito individual ──────
+
+    private fun pagarDebitoItem(context: CommandContext, whatsappService: WhatsappService) {
+        val index = context.args[1].toIntOrNull()
+        if (index == null) {
+            whatsappService.sendMessage(context.from, "Selecione um débito válido.")
+            return
+        }
+
+        val session = debitoVeicularSessionManager.get(context.from)
+        if (session == null) {
+            whatsappService.sendMessage(
+                context.from,
+                "Sessão expirada. Realize uma nova consulta de débitos veiculares."
+            )
+            whatsappService.sendButtons(
+                to = context.from,
+                body = "O que deseja fazer?",
+                buttons = listOf(
+                    Button(id = "/consultar debito_veicular", title = "Consultar Débitos"),
+                    Button(id = "/start", title = "Menu Inicial")
+                )
+            )
+            return
+        }
+
+        val servico = session.servicos.find { it.index == index }
+        if (servico == null) {
+            whatsappService.sendMessage(context.from, "Débito não encontrado. Selecione novamente.")
+            showDebitosParaPagamento(context, whatsappService)
+            return
+        }
+
+        val descricao = servico.codigoTextoItem.ifBlank { servico.nomeServico }
+        whatsappService.sendMessage(
+            context.from,
+            "Gerando PIX para *$descricao*...\nValor: *R\$ ${"%.2f".format(servico.valorItem)}*\nAguarde um momento"
+        )
+
+        val result = debitoVeicularService.gerarPixParaDebito(
+            codigoSolicitacao = session.codigoSolicitacao,
+            codigoServico = servico.codigoServico,
+            numeroIdentificadorItem = servico.numeroIdentificadorItem,
+            numeroUnicoItemBanco = servico.numeroUnicoItemBanco
+        )
+
+        if (!result.success) {
+            whatsappService.sendMessage(
+                context.from,
+                "*Erro ao gerar PIX*\n\n${result.error ?: "Erro desconhecido."}"
+            )
+            whatsappService.sendButtons(
+                to = context.from,
+                body = "O que deseja fazer?",
+                buttons = listOf(
+                    Button(id = "/consultar debitos_listar", title = "Tentar Outro"),
+                    Button(id = "/consultar", title = "Nova Consulta"),
+                    Button(id = "/start", title = "Menu Inicial")
+                )
+            )
+            return
+        }
+
+        val pixCode = result.pixCode!!
+
+        // Enviar QR Code como imagem
+        try {
+            val qrBytes = qrCodeService.generate(pixCode)
+            val mediaId = whatsappService.uploadMedia(qrBytes, "image/png", "pix_debito.png")
+            whatsappService.sendImageById(
+                to = context.from,
+                mediaId = mediaId,
+                caption = "PIX — $descricao — R\$ ${"%.2f".format(servico.valorItem)}"
+            )
+        } catch (e: Exception) {
+            log.warn("Falha ao enviar QR Code do débito veicular: {}", e.message)
+        }
+
+        // Explicação + código PIX separado para cópia fácil
+        whatsappService.sendMessage(
+            context.from,
+            "*PIX Copia e Cola*\n\nDébito: *$descricao*\nValor: *R\$ ${"%.2f".format(servico.valorItem)}*\n\nCopie a mensagem abaixo (toque e segure para copiar):"
+        )
+        whatsappService.sendMessage(context.from, pixCode)
+
+        whatsappService.sendButtons(
+            to = context.from,
+            body = "Após o pagamento, o débito será liquidado automaticamente pelo Banco do Brasil.",
+            buttons = listOf(
+                Button(id = "/consultar debitos_listar", title = "Pagar Outro"),
+                Button(id = "/consultar", title = "Nova Consulta"),
+                Button(id = "/start", title = "Menu Inicial")
+            )
+        )
+    }
+
     // ── Helper: preço efetivo (fallback para meta-módulo) ─────────
 
     private fun getEffectivePrice(tipo: String): BigDecimal {
@@ -803,7 +1092,9 @@ class ConsultarCommand(
         val info = queryTypeRegistry.getTypeInfo(session.tipo)
         if (info != null) {
             paymentSessionManager.consume(context.from)
-            if (queryTypeRegistry.isAgendadoType(session.tipo)) {
+            if (session.tipo == "debito_veicular") {
+                performDebitoVeicularQuery(context, whatsappService, info, session.query)
+            } else if (queryTypeRegistry.isAgendadoType(session.tipo)) {
                 submitScheduledCrlv(context, whatsappService, session.tipo, info, session.query)
             } else {
                 performQuery(context, whatsappService, session.tipo, info, session.query)
@@ -828,7 +1119,9 @@ class ConsultarCommand(
         }
 
         paymentSessionManager.consume(context.from)
-        if (queryTypeRegistry.isAgendadoType(session.tipo)) {
+        if (session.tipo == "debito_veicular") {
+            performDebitoVeicularQuery(context, whatsappService, info, session.query)
+        } else if (queryTypeRegistry.isAgendadoType(session.tipo)) {
             submitScheduledCrlv(context, whatsappService, session.tipo, info, session.query)
         } else {
             performQuery(context, whatsappService, session.tipo, info, session.query)
