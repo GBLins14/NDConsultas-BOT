@@ -143,7 +143,7 @@ class PdfReportService(
             AlertDef("SITUACAO CADASTRAL", AlertStrategy.FIELD_VALUE_NEGATIVE, listOf("situacao_cadastral", "situacao"), "Cadastro regular", "Situacao irregular"),
             AlertDef("OBITO", AlertStrategy.FIELD_HAS_CONTENT, listOf("obito", "indicador_obito", "data_obito"), "Sem registro de obito", "Registro de obito encontrado")
         ),
-        "telefone_full" to listOf(
+        "credlink_telefone" to listOf(
             AlertDef("PORTABILIDADE", AlertStrategy.FIELD_HAS_CONTENT, listOf("portabilidade"), "Sem portabilidade", "Portabilidade registrada")
         )
     )

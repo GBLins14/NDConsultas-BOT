@@ -138,7 +138,7 @@ class QueryTypeRegistry {
         ),
 
         // ── Consultas Pessoais ──────────────────────────────────────
-        "telefone_full" to QueryTypeInfo(
+        "credlink_telefone" to QueryTypeInfo(
             label = "Telefone Full",
             inputPrompt = "Informe o *numero de telefone* (com DDD)\n_Formato: 81999998888_",
             category = "pessoal",
