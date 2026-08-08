@@ -32,13 +32,6 @@ admin:
 bot:
   logo-url: ${BOT_LOGO_URL:https://i.ibb.co/yD4t24w/logo-nd.jpg}
 
-bancobrasil:
-  api-url: ${BB_DEBITOS_API_URL:https://api-ip.bb.com.br/debitos-veiculares/v1}
-  app-key: ${BB_APP_KEY:}
-  client-id: ${BB_CLIENT_ID:}
-  client-secret: ${BB_CLIENT_SECRET:}
-  oauth-url: ${BB_OAUTH_URL:https://oauth.bb.com.br/oauth/token}
-
 syncpay:
   api-url: ${SYNCPAY_API_URL:https://api.syncpayments.com.br}
   client-id: ${SYNCPAY_CLIENT_ID}
